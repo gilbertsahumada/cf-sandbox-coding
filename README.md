@@ -255,3 +255,8 @@ Saving is available after the agent finishes or stops. It writes into the same w
 Files must be regular UTF-8 text of at most 256 KB. Symbolic links, hard links, binary files, Git internals and recognized credential paths are protected. Linux directory descriptors prevent following substituted parent symlinks. A content revision prevents overwriting a concurrent edit: a conflict keeps your draft until you explicitly reload. Drafts stay in browser memory, survive file/session switches, and trigger a warning when leaving; save them before reloading. No source content or file paths are stored in localStorage. If checkpoint creation fails, the UI warns that the save exists only in the running workspace and offers a retry.
 
 Local verification uses simulated API responses for explorer navigation, retained drafts, saving, full-page reload, two-tab conflicts, discard confirmation and Markdown rendering. Filesystem access and conflict handling were also checked in a real Linux container with networking disabled. These checks do not exercise the deployed Cloudflare file endpoints or run a real model turn with manual edits.
+
+
+### Browser annotations in the simulated preview
+
+The local `preview:editor` fixture allows inline style elements so Codex Annotate can draw its selection overlay. The diagnostic comparison confirmed that `style-src-elem` blocked those injected styles under the strict policy. Script execution remains restricted to the same origin; the fixture uses fake credentials and simulated APIs. The deployed Worker's CSP retains its nonce-based style policy. This exception belongs only to the simulated preview.

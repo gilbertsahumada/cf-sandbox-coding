@@ -417,9 +417,11 @@ createServer(async (req, res) => {
       ".svg": "image/svg+xml",
     }[extname(file)] || "application/octet-stream";
   const nonce = randomUUID();
+  // Codex Annotate injects style elements. This fixture has no real credentials
+  // or model/GitHub connection; permit its selection overlay in the local preview.
   res.writeHead(200, {
     "content-type": type,
-    "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com`,
+    "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-elem 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com`,
   });
   const bytes = readFileSync(file);
   res.end(
