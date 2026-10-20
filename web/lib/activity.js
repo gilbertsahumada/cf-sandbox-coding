@@ -1,5 +1,5 @@
 const textBlocks = value => Array.isArray(value) ? value.filter(block => block?.type === 'text').map(block => block.text || '').join('\n') : '';
-export function createActivity(target, run, count, follow) {
+export function createActivity(target, run, count, follow, { archived = false } = {}) {
   target.replaceChildren();
   const title = document.createElement('div'); title.className = 'log-line system'; title.textContent = `${run.agent === 'pi' ? 'Pi' : 'OpenCode'} · ${run.id}`; target.append(title);
   const waiting = document.createElement('div'); waiting.className = 'log-line system'; waiting.textContent = run.state === 'cloning' ? 'Preparing the workspace and cloning the repository…' : 'Waiting for the first agent output…'; target.append(waiting);
@@ -21,10 +21,15 @@ export function createActivity(target, run, count, follow) {
     for (const [key, node] of nodes) if (node.parentNode !== target) nodes.delete(key);
     if (follow.checked) target.scrollTop = target.scrollHeight;
   };
+  let firstEntry = true;
   const line = raw => {
     if (!raw.trim()) return;
     let event;
-    try { event = JSON.parse(raw); } catch { add('Partial output unavailable.', 'system', 'partial'); return; }
+    try { event = JSON.parse(raw); } catch {
+      add(archived && firstEntry ? 'One incomplete entry at the start of this archived log was skipped. Task status is shown separately.' : 'A log entry could not be displayed. Check the session status for the task result.', 'system', 'partial');
+      firstEntry = false; return;
+    }
+    firstEntry = false;
     if (!event || typeof event !== 'object') return;
     const toolKey = `tool:${event.toolCallId || event.toolName || 'unknown'}`;
     if (event.type === 'tool_execution_start') add(`${event.toolName || 'tool'}  ${JSON.stringify(event.args || {})}`, 'tool', `${toolKey}:start`);
@@ -35,6 +40,7 @@ export function createActivity(target, run, count, follow) {
     // Other agent events can contain internal model state; only render explicit activity.
   };
   count.textContent = '0';
+  if (archived) add('Archived logs — latest 32 KB per output channel. Earlier entries may be omitted. This notice does not indicate a task failure.', 'system');
   return {
     stdout(text) {
       dirty = false;

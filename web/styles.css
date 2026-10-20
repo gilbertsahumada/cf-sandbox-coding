@@ -1471,3 +1471,17 @@ a {
 .response-code .tok-typeName, .response-code .tok-className, .response-code .tok-tagName { color: #acc0cd; }
 .response-code .tok-comment { color: #87909e; }
 .response-code .tok-variableName, .response-code .tok-propertyName { color: #d2d7df; }
+
+
+.startup-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.startup-progress svg { width: 14px; height: 14px; flex: none; }
+
+.activity-content { display: flex; flex-direction: column; }
+.activity-content .activity-output { flex: 1; min-height: 0; height: auto; }

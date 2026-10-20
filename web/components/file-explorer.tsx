@@ -137,14 +137,14 @@ export function FileExplorer({
           variant="ghost"
           size="icon-xs"
           aria-label="Refresh files"
-          disabled={workspace.directoryAt("")?.loading}
+          disabled={workspace.preparing || Boolean(workspace.preparationError) || workspace.directoryAt("")?.loading}
           onClick={workspace.refreshTree}
         >
           <RefreshCw />
         </Button>
       </div>
       <div className="repository-tree">
-        {workspace.task ? (
+        {workspace.preparing ? <p className="tree-note" role="status"><Spinner aria-hidden="true" /> Preparing repository files…</p> : workspace.preparationError ? <p className="tree-note">{workspace.preparationError}</p> : workspace.task ? (
           <DirectoryRows
             key={workspace.task}
             workspace={workspace}

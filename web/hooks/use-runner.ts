@@ -1,3 +1,4 @@
+import { prepareSession, type Startup } from "@/lib/session-start";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { historyForStorage, recoveredRun } from "@/lib/run-history.js";
 import { createActivity } from "@/lib/activity.js";
@@ -45,6 +46,8 @@ export function useRunner() {
   const [connected, setConnected] = useState(false),
     [checking, setChecking] = useState(true),
     [authOpen, setAuthOpen] = useState(false);
+  const [startup, setStartup] = useState<Startup | null>(null);
+  const startLock = useRef(false);
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [sending, setSending] = useState(false),
@@ -86,6 +89,7 @@ export function useRunner() {
     setRuns((items) => items.filter((run) => !run.private));
     setSelectedId(null);
     setConversation(null);
+    setStartup(null);
     setLiveText(null);
     setDiff("");
     setProposal(null);
@@ -336,7 +340,7 @@ export function useRunner() {
     setLoadingDiff(true);
     setStreamState("Connecting");
     const transcript = assistantStream(setLiveText);
-    const activity = () =>
+    const activity = (archived = false) =>
       activityRef.current
         ? createActivity(
             activityRef.current,
@@ -351,6 +355,7 @@ export function useRunner() {
                 return followRef.current;
               },
             },
+            { archived },
           )
         : null;
     let view = activity();
@@ -423,8 +428,7 @@ export function useRunner() {
       source.addEventListener("reset", () => {
         if (current) {
           transcript.reset();
-          view = activity();
-          view?.note("Latest archived output.");
+          view = activity(true);
         }
       });
       source.addEventListener("stdout", (event) => {
@@ -571,12 +575,13 @@ export function useRunner() {
     repo: Repository | null,
     ref: string,
     example = false,
+    onPreparing?: () => void,
   ) => {
     if (!connected) {
       setAuthOpen(true);
       throw Error("Sign in to your workspace to get started.");
     }
-    if (busy || runs.some((run) => isActive(run.state)))
+    if (startLock.current || busy || runs.some((run) => isActive(run.state)))
       throw Error("A task is already running. Open it to continue working.");
     if (!repo && !example) throw Error("Choose a GitHub repository.");
     const run: Run = {
@@ -588,12 +593,20 @@ export function useRunner() {
       state: "cloning",
       startedAt: Date.now(),
     };
+    const epoch = authEpoch.current;
+    const preparation: Startup = { task: run.id, agent, prompt, stage: "cloning", startedAt: Date.now() };
+    startLock.current = true;
     setBusy(true);
+    setStartup(preparation);
+    setConversation(null);
+    setLiveText(null);
+    setDiff("");
+    setProposal(null);
     setRuns((items) => [run, ...items].slice(0, 12));
     setSelectedId(run.id);
     setNotice("");
     try {
-      await request(`/sandboxes/${run.id}/repository`, {
+      await prepareSession(run.id, {
         ...(repo
           ? {
               installationId: repo.installationId,
@@ -601,15 +614,23 @@ export function useRunner() {
             }
           : { url: run.repository }),
         ...(ref ? { ref } : {}),
+      }, { agent, prompt }, request, () => onPreparing?.(), () => {
+        if (epoch !== authEpoch.current) throw new DOMException("Session changed", "AbortError");
+        setStartup({ ...preparation, stage: "starting" });
       });
-      await request(`/sandboxes/${run.id}/task`, { agent, prompt });
+      if (epoch !== authEpoch.current) throw new DOMException("Session changed", "AbortError");
+      setStartup(null);
       updateRun(run.id, { state: "running" });
       setRevision((value) => value + 1);
     } catch (error) {
-      updateRun(run.id, { state: "failed", finishedAt: Date.now() });
-      report(error);
+      if (epoch === authEpoch.current) {
+        updateRun(run.id, { state: "failed", finishedAt: Date.now() });
+        setStartup({ ...preparation, stage: "failed", error: message(error) });
+        report(error);
+      }
       throw error;
     } finally {
+      startLock.current = false;
       setBusy(false);
     }
   };
@@ -685,6 +706,7 @@ export function useRunner() {
     authOpen,
     setAuthOpen,
     notice,
+    startup,
     setNotice,
     busy,
     sending,

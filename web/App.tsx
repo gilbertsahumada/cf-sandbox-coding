@@ -1,3 +1,4 @@
+import { startupText } from "@/lib/session-start";
 import {
   memo,
   lazy,
@@ -28,6 +29,7 @@ import {
   Pause,
   Check,
   Code2,
+  CircleAlert,
   Download,
   FileDiff,
   Files,
@@ -355,7 +357,8 @@ function ActivityPanel({
   const [follow, setFollow] = useState(true);
   const [activityTab, setActivityTab] = useState("tools");
   const responseRef = useRef<HTMLDivElement>(null);
-  const response =
+  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
+  const response = startup ? startupText(startup) :
     runner.liveText ?? runner.conversation?.turns.at(-1)?.response ?? "";
   useEffect(() => {
     if (follow && runner.selected && isActive(runner.selected.state) && responseRef.current)
@@ -389,7 +392,7 @@ function ActivityPanel({
               ) : runner.streamState === "Live" ? (
                 <Radio aria-hidden="true" />
               ) : null}
-              {runner.streamState || "No activity"}
+              {startup ? startup.stage === "failed" ? "Preparation failed" : "Preparing" : runner.streamState || "No activity"}
             </span>
             <Button
               variant="ghost"
@@ -423,7 +426,13 @@ function ActivityPanel({
           className="activity-scroll"
           hidden={!expanded}
         >
-          <TabsContent value="tools" forceMount hidden={activityTab !== "tools"} className="activity-content"><div
+          <TabsContent value="tools" forceMount hidden={activityTab !== "tools"} className="activity-content">
+          {startup ? <div className="startup-progress" role="status">
+            {startup.stage !== "failed" ? <Spinner aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
+            <span>{startupText(startup)}</span>
+          </div> : null}
+
+          <div
             className="activity-output"
             ref={runner.activityRef}
             tabIndex={0}
@@ -551,7 +560,7 @@ function Workspace({
               variant="destructive"
               size="xs"
               onClick={() => void runner.stop()}
-              disabled={runner.stopping}
+              disabled={runner.stopping || runner.busy}
               aria-busy={runner.stopping}
             >
               {runner.stopping ? (
@@ -705,8 +714,9 @@ function AgentChat({
     formRef = useRef<HTMLFormElement>(null),
     lastTurn = useRef(-1);
   const active = runner.selected ? isActive(runner.selected.state) : false;
+  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
   const chat = runner.conversation,
-    turns = chat?.turns || [];
+    turns = chat?.turns.length ? chat.turns : startup ? [{ id: startup.task, number: 1, prompt: startup.prompt, response: startupText(startup) }] : [];
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -787,7 +797,7 @@ function AgentChat({
         tabIndex={0}
         aria-label="Conversation messages"
       >
-        {runner.loadingTask || (runner.checking && runner.selected) ? (
+        {!startup && (runner.loadingTask || (runner.checking && runner.selected)) ? (
           <div className="flex flex-col gap-4 p-4">
             <Skeleton className="h-12 w-4/5 self-end" />
             <Skeleton className="h-24 w-full" />
@@ -816,7 +826,7 @@ function AgentChat({
                   {index === turns.length - 1 && active ? (
                     <span className="assistant-working">
                       <Spinner aria-hidden="true" />
-                      Working
+                      {startup ? "Preparing" : "Working"}
                     </span>
                   ) : null}
                 </div>
@@ -870,8 +880,8 @@ function AgentChat({
             <MessageSquare className="size-3" aria-hidden="true" />
           )}
           <span>
-            {active
-              ? "The agent is working"
+            {startup?.stage === "failed" ? "Preparation failed" : active
+              ? (startup ? startupText(startup) : "The agent is working")
               : chat?.canContinue
                 ? "Waiting for your reply"
                 : runner.selected
@@ -967,7 +977,9 @@ function AgentChat({
           </Alert>
         ) : null}
         <p className="composer-hint">
-          {active
+          {startup?.stage === "failed" ? "Open New session to review your instruction and try again." : startup
+            ? "Preparation is in progress. Your instruction is shown above."
+            : active
             ? "Stop the task to change direction."
             : chat?.warning ||
               chat?.reason ||
@@ -1303,6 +1315,7 @@ export default function App() {
               runner={runner}
               open={newOpen}
               onOpenChange={setNewOpen}
+              onStarting={() => setMobilePane("chat")}
             />
             <SettingsDialog
               runner={runner}
