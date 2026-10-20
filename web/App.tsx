@@ -157,27 +157,27 @@ function SessionSidebar({
       .includes(search.toLocaleLowerCase()),
   );
   return (
-    <aside className="session-sidebar" aria-label="Sesiones y archivos">
+    <aside className="session-sidebar" aria-label="Sessions and files">
       <div className="panel-heading">
         <h2>
           <FolderGit2 className="size-3.5" aria-hidden="true" />
-          Explorador
+          Explorer
         </h2>
         <IconButton
           icon={PanelLeftClose}
-          label="Ocultar sesiones"
+          label="Hide sessions"
           onClick={close}
         />
       </div>
       <div className="sidebar-actions">
         <Button variant="outline" className="w-full" onClick={newSession}>
           <Plus data-icon="inline-start" />
-          Nueva sesión
+          New session
         </Button>
         <InputGroup>
           <InputGroupInput
-            aria-label="Buscar sesiones"
-            placeholder="Buscar sesiones…"
+            aria-label="Search sessions"
+            placeholder="Search sessions…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -188,11 +188,11 @@ function SessionSidebar({
       </div>
       <div className="section-heading">
         <ChevronDown className="size-3.5" />
-        <h3>Sesiones recientes</h3>
+        <h3>Recent sessions</h3>
         <Badge variant="secondary">{runner.runs.length}</Badge>
       </div>
       <div className="session-list">
-        <nav aria-label="Sesiones recientes">
+        <nav aria-label="Recent sessions">
           {matches.map((run) => (
             <Button
               key={run.id}
@@ -219,8 +219,8 @@ function SessionSidebar({
           {!matches.length ? (
             <p className="sidebar-empty">
               {search
-                ? "No hay sesiones que coincidan."
-                : "Tus sesiones aparecerán aquí."}
+                ? "No matching sessions."
+                : "Your sessions will appear here."}
             </p>
           ) : null}
         </nav>
@@ -228,10 +228,10 @@ function SessionSidebar({
       <Separator />
       <div className="section-heading">
         <ChevronDown className="size-3.5" />
-        <h3>Cambios del repositorio</h3>
+        <h3>Repository changes</h3>
         <Badge variant="secondary">{files.length}</Badge>
       </div>
-      <nav className="changed-files" aria-label="Archivos modificados">
+      <nav className="changed-files" aria-label="Changed files">
         {files.map((file) => (
           <Button
             key={file.path}
@@ -253,7 +253,7 @@ function SessionSidebar({
           (runner.checking && Boolean(runner.selected))) ? (
           <div
             className="flex flex-col gap-2 px-3"
-            aria-label="Cargando archivos"
+            aria-label="Loading files"
             aria-busy="true"
           >
             <Skeleton className="h-7 w-full" />
@@ -262,7 +262,7 @@ function SessionSidebar({
           </div>
         ) : !files.length ? (
           <p className="sidebar-empty">
-            Los archivos aparecerán cuando el agente haga cambios.
+            Files will appear when the agent makes changes.
           </p>
         ) : null}
       </nav>
@@ -275,12 +275,12 @@ function SessionSidebar({
           <Github data-icon="inline-start" />
           {runner.github?.connected
             ? runner.github.accounts.join(", ")
-            : "Conectar GitHub"}
+            : "Connect GitHub"}
           <ChevronRight data-icon="inline-end" />
         </Button>
         <div className="sidebar-caption">
           <Cloud className="size-3.5" />
-          Sesiones en Cloudflare Sandbox
+          Sessions in Cloudflare Sandbox
         </div>
       </div>
     </aside>
@@ -291,7 +291,7 @@ const DiffPane = memo(function DiffPane({ file }: { file: ChangedFile }) {
     <div
       className="code-scroll"
       tabIndex={0}
-      aria-label={`Diff de ${file.path}`}
+      aria-label={`Diff for ${file.path}`}
     >
       <div className="code-lines">
         {file.lines.slice(0, 5000).map((line, index) => (
@@ -308,8 +308,8 @@ const DiffPane = memo(function DiffPane({ file }: { file: ChangedFile }) {
       </div>
       {file.lines.length > 5000 ? (
         <p className="code-limit">
-          Mostrando las primeras 5000 líneas. Descarga el patch para revisar el
-          archivo completo.
+          Showing the first 5,000 lines. Download the patch to review the full
+          file.
         </p>
       ) : null}
     </div>
@@ -329,23 +329,23 @@ function ActivityPanel({
     <Collapsible open={expanded} onOpenChange={toggle} asChild>
       <section
         className={cn("activity-panel", !expanded && "collapsed")}
-        aria-label="Actividad de herramientas"
+        aria-label="Tool activity"
       >
         <div className="panel-heading">
           <span className="activity-heading">
             <SquareTerminal className="size-3.5" />
-            Actividad<Badge variant="secondary">{runner.activityCount}</Badge>
+            Activity<Badge variant="secondary">{runner.activityCount}</Badge>
           </span>
           <div className="flex items-center gap-1">
             <span className="stream-label" role="status">
-              {["Conectando", "Reconectando"].includes(runner.streamState) ? (
+              {["Connecting", "Reconnecting"].includes(runner.streamState) ? (
                 <Spinner aria-hidden="true" />
-              ) : runner.streamState === "Guardado" ? (
+              ) : runner.streamState === "Saved" ? (
                 <Check aria-hidden="true" />
-              ) : runner.streamState === "En vivo" ? (
+              ) : runner.streamState === "Live" ? (
                 <Radio aria-hidden="true" />
               ) : null}
-              {runner.streamState || "Sin ejecución"}
+              {runner.streamState || "No activity"}
             </span>
             <Button
               variant="ghost"
@@ -361,15 +361,13 @@ function ActivityPanel({
               ) : (
                 <Pause data-icon="inline-start" />
               )}
-              {follow ? "Siguiendo" : "Pausado"}
+              {follow ? "Following" : "Paused"}
             </Button>
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                aria-label={
-                  expanded ? "Ocultar actividad" : "Mostrar actividad"
-                }
+                aria-label={expanded ? "Hide activity" : "Show activity"}
               >
                 {expanded ? <ChevronDown /> : <PanelBottom />}
               </Button>
@@ -385,7 +383,7 @@ function ActivityPanel({
             className="activity-output"
             ref={runner.activityRef}
             tabIndex={0}
-            aria-label="Logs de ejecución"
+            aria-label="Execution logs"
           />
         </CollapsibleContent>
       </section>
@@ -428,15 +426,13 @@ function Workspace({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
-    <main className="code-workspace" aria-label="Revisión de código">
+    <main className="code-workspace" aria-label="Code review">
       <div className="editor-toolbar">
         <div className="editor-breadcrumb">
           <GitBranch className="size-3.5" />
           <span className="truncate">
             {runner.selected?.ref ||
-              (runner.selected
-                ? "Rama predeterminada"
-                : "Sin repositorio abierto")}
+              (runner.selected ? "Default branch" : "No repository open")}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -444,7 +440,7 @@ function Workspace({
             variant="ghost"
             size="xs"
             disabled={!runner.diff}
-            aria-label="Descargar patch"
+            aria-label="Download patch"
             onClick={download}
           >
             <Download data-icon="inline-start" />
@@ -469,13 +465,13 @@ function Workspace({
                     onClick={publish}
                   >
                     <GitPullRequest data-icon="inline-start" />
-                    Crear PR
+                    Create PR
                   </Button>
                 </span>
               </TooltipTrigger>
               <TooltipContent>
                 {runner.proposal?.reason ||
-                  "Publicar los cambios revisados en un borrador"}
+                  "Publish reviewed changes as a draft PR"}
               </TooltipContent>
             </Tooltip>
           )}
@@ -492,7 +488,7 @@ function Workspace({
               ) : (
                 <Square data-icon="inline-start" />
               )}
-              {runner.stopping ? "Deteniendo…" : "Detener"}
+              {runner.stopping ? "Stopping…" : "Stop"}
             </Button>
           ) : null}
         </div>
@@ -504,7 +500,7 @@ function Workspace({
           className="file-view"
         >
           <div className="file-tabs">
-            <TabsList variant="line" aria-label="Archivos con cambios">
+            <TabsList variant="line" aria-label="Changed files">
               {files.map((item) => (
                 <TabsTrigger
                   key={item.path}
@@ -533,7 +529,7 @@ function Workspace({
                   <span className="diff-removed">−{item.removed}</span>
                   <Badge variant="outline">
                     <Eye data-icon="inline-start" />
-                    Solo lectura
+                    Read-only
                   </Badge>
                 </div>
               </div>
@@ -547,7 +543,7 @@ function Workspace({
         <div className="diff-loading" aria-busy="true" role="status">
           <div className="flex items-center gap-2">
             <Spinner aria-hidden="true" />
-            Recuperando cambios…
+            Restoring changes…
           </div>
           <Skeleton className="h-5 w-2/5" />
           <Skeleton className="h-5 w-4/5" />
@@ -560,7 +556,7 @@ function Workspace({
           <div className="file-tabs">
             <span className="editor-tab-empty">
               <Files className="size-3.5" />
-              Espacio de trabajo
+              Workspace
             </span>
           </div>
           <Empty className="editor-empty">
@@ -571,28 +567,28 @@ function Workspace({
               <EmptyTitle>
                 {runner.selected
                   ? isActive(runner.selected.state)
-                    ? `Esperando cambios de ${agentNames[runner.selected.agent]}`
-                    : "Este turno no dejó cambios"
-                  : "Abre una sesión de trabajo"}
+                    ? `Waiting for changes from ${agentNames[runner.selected.agent]}`
+                    : "This turn has no changes"
+                  : "Open a work session"}
               </EmptyTitle>
               <EmptyDescription>
                 {runner.selected
-                  ? "Sigue la conversación del agente y revisa su actividad. Los cambios de esta sesión aparecerán aquí."
-                  : "Pi u OpenCode trabajarán sobre un clon en la nube. Tú das la dirección y revisas cada cambio."}
+                  ? "Follow the agent conversation and review its activity. Changes from this session will appear here."
+                  : "Pi or OpenCode works on a cloud clone. You provide direction and review every change."}
               </EmptyDescription>
             </EmptyHeader>
             {!runner.selected ? (
               <EmptyContent>
                 <Button variant="outline" onClick={newSession}>
                   <Plus data-icon="inline-start" />
-                  Nueva sesión
+                  New session
                 </Button>
                 <p className="workspace-shortcuts">
                   <KbdGroup>
                     <Kbd>⌘ / Ctrl</Kbd>
                     <Kbd>N</Kbd>
                   </KbdGroup>
-                  <span>Nueva sesión</span>
+                  <span>New session</span>
                 </p>
               </EmptyContent>
             ) : null}
@@ -602,13 +598,12 @@ function Workspace({
       <div className="changes-summary">
         <span>
           <FileDiff className="size-3.5" />
-          {files.length}{" "}
-          {files.length === 1 ? "archivo modificado" : "archivos modificados"}
+          {files.length} {files.length === 1 ? "changed file" : "changed files"}
         </span>
         <span className="diff-stat">
           <span className="diff-added">+{additions}</span>
           <span className="diff-removed">−{deletions}</span>
-          <span>contra el commit inicial</span>
+          <span>against the initial commit</span>
         </span>
       </div>
       <ActivityPanel
@@ -657,17 +652,15 @@ function AgentChat({
       setDraft("");
       delete drafts.current[draftKey];
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "No se pudo enviar el mensaje.",
-      );
+      setError(e instanceof Error ? e.message : "Could not send the message.");
     }
   }
   return (
-    <aside className="agent-panel" aria-label="Chat del agente">
+    <aside className="agent-panel" aria-label="Agent chat">
       <div className="panel-heading">
         <h2>
           <MessageSquare className="size-3.5" />
-          Agente
+          Agent
         </h2>
         <div className="flex items-center gap-2">
           {runner.selected ? (
@@ -677,7 +670,7 @@ function AgentChat({
           ) : null}
           <IconButton
             icon={Plus}
-            label="Nueva sesión de agente"
+            label="New agent session"
             onClick={newSession}
           />
         </div>
@@ -686,14 +679,12 @@ function AgentChat({
         <Cloud className="size-4" />
         <div>
           <strong>
-            {runner.selected
-              ? "Conversación de la sesión"
-              : "Tu agente en la nube"}
+            {runner.selected ? "Session conversation" : "Your cloud agent"}
           </strong>
           <span>
             {runner.selected
               ? runner.selected.id.slice(0, 18)
-              : "Pi u OpenCode, desde tu navegador"}
+              : "Pi or OpenCode, from your browser"}
           </span>
         </div>
         {chat?.checkpointSaved ? (
@@ -701,10 +692,10 @@ function AgentChat({
             <TooltipTrigger>
               <CloudCheck
                 className="size-4 text-muted-foreground"
-                aria-label="Contexto y cambios guardados"
+                aria-label="Context and changes saved"
               />
             </TooltipTrigger>
-            <TooltipContent>Contexto y cambios guardados</TooltipContent>
+            <TooltipContent>Context and changes saved</TooltipContent>
           </Tooltip>
         ) : null}
       </div>
@@ -712,14 +703,14 @@ function AgentChat({
         className="conversation-scroll"
         ref={scrollRef}
         tabIndex={0}
-        aria-label="Mensajes de la conversación"
+        aria-label="Conversation messages"
       >
         {runner.loadingTask || (runner.checking && runner.selected) ? (
           <div className="flex flex-col gap-4 p-4">
             <Skeleton className="h-12 w-4/5 self-end" />
             <Skeleton className="h-24 w-full" />
             <span className="text-xs text-muted-foreground">
-              Recuperando conversación…
+              Restoring conversation…
             </span>
           </div>
         ) : turns.length ? (
@@ -729,7 +720,7 @@ function AgentChat({
                 <article className="chat-user">
                   <div className="message-label">
                     <UserRound className="size-3" aria-hidden="true" />
-                    Tú<span>Mensaje {turn.number}</span>
+                    You<span>Message {turn.number}</span>
                   </div>
                   <p>{turn.prompt}</p>
                 </article>
@@ -747,17 +738,17 @@ function AgentChat({
                   {index === turns.length - 1 && active ? (
                     <span className="assistant-working">
                       <Spinner aria-hidden="true" />
-                      Trabajando
+                      Working
                     </span>
                   ) : null}
                 </div>
                 <p>
                   {index === turns.length - 1 && runner.liveText !== null
-                    ? runner.liveText || "Pensando…"
+                    ? runner.liveText || "Thinking…"
                     : turn.response ||
                       (active
-                        ? "Revisando tu instrucción y el repositorio…"
-                        : "Sin respuesta guardada.")}
+                        ? "Reviewing your instructions and the repository…"
+                        : "No saved response.")}
                 </p>
               </article>
             </div>
@@ -770,20 +761,20 @@ function AgentChat({
               </EmptyMedia>
               <EmptyTitle>
                 {runner.selected
-                  ? "Recupera tu conversación"
-                  : "Una conversación, todo el contexto"}
+                  ? "Restore your conversation"
+                  : "One conversation, all the context"}
               </EmptyTitle>
               <EmptyDescription>
                 {runner.selected
                   ? chat?.reason ||
-                    "Aquí aparecerán los mensajes y las respuestas de esta tarea."
-                  : "Describe una tarea, responde al agente y sigue trabajando sobre los mismos archivos."}
+                    "Your task messages and responses will appear here."
+                  : "Describe a task, reply to the agent, and keep working on the same files."}
               </EmptyDescription>
             </EmptyHeader>
             {!runner.selected ? (
               <EmptyContent>
                 <Button variant="ghost" onClick={newSession}>
-                  Empezar una sesión
+                  Start a session
                   <ChevronRight data-icon="inline-end" />
                 </Button>
               </EmptyContent>
@@ -800,12 +791,12 @@ function AgentChat({
           )}
           <span>
             {active
-              ? "El agente está trabajando"
+              ? "The agent is working"
               : chat?.canContinue
-                ? "Esperando tu respuesta"
+                ? "Waiting for your reply"
                 : runner.selected
-                  ? "Conversación guardada"
-                  : "Sin sesión abierta"}
+                  ? "Saved conversation"
+                  : "No session open"}
           </span>
         </div>
         <form ref={formRef} onSubmit={submit}>
@@ -819,7 +810,7 @@ function AgentChat({
               }
             >
               <FieldLabel htmlFor="chat-message" className="sr-only">
-                Responder al agente
+                Reply to the agent
               </FieldLabel>
               <InputGroup className="chat-input-group">
                 <InputGroupTextarea
@@ -839,8 +830,8 @@ function AgentChat({
                   }
                   placeholder={
                     runner.selected
-                      ? "Responde o indica el siguiente cambio…"
-                      : "Abre una sesión para conversar…"
+                      ? "Reply or describe the next change…"
+                      : "Open a session to chat…"
                   }
                   onKeyDown={(event) => {
                     if (
@@ -874,7 +865,7 @@ function AgentChat({
                         runner.sending
                       }
                       aria-label={
-                        runner.sending ? "Enviando mensaje" : "Enviar mensaje"
+                        runner.sending ? "Sending message" : "Send message"
                       }
                       aria-busy={runner.sending}
                     >
@@ -897,12 +888,12 @@ function AgentChat({
         ) : null}
         <p className="composer-hint">
           {active
-            ? "Puedes detener la tarea para cambiar de dirección."
+            ? "Stop the task to change direction."
             : chat?.warning ||
               chat?.reason ||
               (chat?.checkpointSaved
-                ? "Contexto y cambios guardados en la nube."
-                : "El agente trabaja en un entorno aislado.")}
+                ? "Context and changes saved in the cloud."
+                : "The agent works in an isolated workspace.")}
         </p>
       </div>
     </aside>
@@ -1014,7 +1005,7 @@ export default function App() {
             <span className="truncate">
               {runner.selected?.repository
                 .replace("https://github.com/", "")
-                .replace(/\.git$/, "") || "Editor en la nube"}
+                .replace(/\.git$/, "") || "Cloud code editor"}
             </span>
           </div>
           <div className="titlebar-actions">
@@ -1039,12 +1030,12 @@ export default function App() {
                 <LogIn data-icon="inline-start" />
               )}
               {exiting
-                ? "Saliendo…"
+                ? "Signing out…"
                 : runner.checking
-                  ? "Conectando…"
+                  ? "Connecting…"
                   : runner.connected
-                    ? "Conectado · salir"
-                    : "Conectar"}
+                    ? "Connected · sign out"
+                    : "Connect"}
             </Button>
           </div>
         </header>
@@ -1055,7 +1046,7 @@ export default function App() {
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Cerrar aviso"
+              aria-label="Dismiss notice"
               onClick={() => runner.setNotice("")}
             >
               <X />
@@ -1063,10 +1054,10 @@ export default function App() {
           </Alert>
         ) : null}
         <div className="editor-body">
-          <nav className="activity-rail" aria-label="Paneles del espacio">
+          <nav className="activity-rail" aria-label="Workspace panels">
             <IconButton
               icon={Files}
-              label="Sesiones y cambios"
+              label="Sessions and changes"
               pressed={sidebarVisible}
               onClick={() => {
                 setSidebarVisible((value) => !value);
@@ -1075,7 +1066,7 @@ export default function App() {
             />
             <IconButton
               icon={MessageSquare}
-              label="Conversación del agente"
+              label="Agent conversation"
               onClick={() => {
                 if (mobile) setMobilePane("chat");
                 else document.getElementById("chat-message")?.focus();
@@ -1083,7 +1074,7 @@ export default function App() {
             />
             <IconButton
               icon={SquareTerminal}
-              label="Actividad de herramientas"
+              label="Tool activity"
               pressed={logsExpanded}
               onClick={() => {
                 setLogsExpanded((value) => !value);
@@ -1096,7 +1087,7 @@ export default function App() {
             <div className="rail-spacer" />
             <IconButton
               icon={Settings2}
-              label="Configurar espacio"
+              label="Workspace settings"
               onClick={() =>
                 runner.connected
                   ? setSettingsOpen(true)
@@ -1116,17 +1107,17 @@ export default function App() {
                       runner.activate(runner.selected.id);
                   }
                 }}
-                aria-label="Vista del espacio"
+                aria-label="Workspace view"
                 variant="outline"
                 spacing={0}
               >
                 <ToggleGroupItem value="sessions">
                   <Files data-icon="inline-start" />
-                  Sesiones
+                  Sessions
                 </ToggleGroupItem>
                 <ToggleGroupItem value="changes">
                   <FileDiff data-icon="inline-start" />
-                  Cambios
+                  Changes
                 </ToggleGroupItem>
                 <ToggleGroupItem value="chat">
                   <MessageSquare data-icon="inline-start" />
@@ -1181,13 +1172,15 @@ export default function App() {
           <div>
             <Cloud className="size-3.5" />
             <span>
-              {runner.connected ? "Cloudflare Sandbox" : "Conecta tu espacio"}
+              {runner.connected
+                ? "Cloudflare Sandbox"
+                : "Sign in to your workspace"}
             </span>
             {runner.selected ? (
               <>
                 <span className="statusbar-divider" />
                 <GitBranch className="size-3" />
-                <span>{runner.selected.ref || "Rama predeterminada"}</span>
+                <span>{runner.selected.ref || "Default branch"}</span>
               </>
             ) : null}
           </div>
@@ -1195,13 +1188,13 @@ export default function App() {
             {runner.selected ? (
               <TaskBadge state={runner.selected.state} />
             ) : (
-              <span>Entorno por sesión</span>
+              <span>One workspace per session</span>
             )}
             <span className="statusbar-divider" />
             <span>
               {runner.conversation?.checkpointSaved
-                ? "Contexto guardado"
-                : "Hasta 30 min por respuesta"}
+                ? "Context saved"
+                : "Up to 30 min per reply"}
             </span>
           </div>
         </footer>

@@ -22,12 +22,12 @@ export function exportChanges(directory, base) {
     for (const path of new Set([...before.keys(), ...after.keys()])) {
       const old = before.get(path), current = after.get(path);
       if (old?.sha === current?.sha && old?.mode === current?.mode) continue;
-      if (files.length >= 200) throw Error('La propuesta supera el límite de 200 archivos. Descarga el patch.');
+      if (files.length >= 200) throw Error('The proposal exceeds the 200-file limit. Download the patch.');
       const file = { path, mode: current?.mode || old.mode, type: current?.type || old.type, sha: current?.sha || null };
       if (current?.type === 'blob') {
         const bytes = git('cat-file', 'blob', current.sha);
         size += bytes.length;
-        if (size > 5 * 1024 * 1024) throw Error('La propuesta supera 5 MB. Descarga el patch.');
+        if (size > 5 * 1024 * 1024) throw Error('The proposal exceeds 5 MB. Download the patch.');
         file.content = bytes.toString('base64');
       }
       files.push(file);

@@ -60,14 +60,14 @@ export const agentNames: Record<Agent, string> = {
   opencode: "OpenCode",
 };
 export const stateNames: Record<RunState, string> = {
-  cloning: "Preparando",
-  running: "Trabajando",
-  stopping: "Deteniendo",
-  cancelled: "Detenida",
-  succeeded: "Respuesta lista",
-  failed: "Falló",
-  lost: "Entorno perdido",
-  none: "Sin tarea",
+  cloning: "Preparing",
+  running: "Working",
+  stopping: "Stopping",
+  cancelled: "Stopped",
+  succeeded: "Ready for your reply",
+  failed: "Failed",
+  lost: "Workspace lost",
+  none: "No task",
 };
 export const isActive = (state: RunState) =>
   ["cloning", "running", "stopping"].includes(state);

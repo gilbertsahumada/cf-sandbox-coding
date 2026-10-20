@@ -11,7 +11,7 @@ test('private runs survive reload without persisting repository details, instruc
   assert.equal(restored.id, id);
   assert.equal(restored.state, 'running');
   assert.equal(restored.private, true);
-  assert.equal(restored.repository, 'Repositorio privado');
+  assert.equal(restored.repository, 'Private repository');
 });
 test('recovery accepts task identifiers without inventing a start time or restarting an agent', () => {
   const run = recoveredRun(id);
@@ -33,6 +33,6 @@ test('stopping and cancelled states survive reloading private task references', 
   for (const state of ['stopping', 'cancelled']) {
     const [saved] = historyForStorage([{ id, agent: 'pi', private: true, repository: 'private-repo', state }]);
     assert.equal(saved.state, state);
-    assert.equal(saved.repository, 'Repositorio privado');
+    assert.equal(saved.repository, 'Private repository');
   }
 });

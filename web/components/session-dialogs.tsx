@@ -48,7 +48,9 @@ import { Separator } from "@/components/ui/separator";
 import type { Runner } from "@/hooks/use-runner";
 import { agentNames, type Agent } from "@/lib/types";
 const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "No se pudo completar la operación.";
+  error instanceof Error
+    ? error.message
+    : "The operation could not be completed.";
 function FormError({ error }: { error: string }) {
   return error ? (
     <Alert variant="destructive">
@@ -83,10 +85,10 @@ function GitHubConnectButton({ runner }: { runner: Runner }) {
         <Github data-icon="inline-start" />
       )}
       {pending
-        ? "Abriendo GitHub…"
+        ? "Opening GitHub…"
         : runner.github?.connected
-          ? "Elegir repositorios"
-          : "Conectar GitHub"}
+          ? "Choose repositories"
+          : "Connect GitHub"}
     </Button>
   );
 }
@@ -120,15 +122,15 @@ export function AuthDialog({ runner }: { runner: Runner }) {
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Conecta tu espacio</DialogTitle>
+          <DialogTitle>Sign in to your workspace</DialogTitle>
           <DialogDescription>
-            Accede a tus sesiones y al agente que trabaja en la nube.
+            Access your sessions and the agent working in the cloud.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup>
             <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="runner-token">Token de acceso</FieldLabel>
+              <FieldLabel htmlFor="runner-token">Access token</FieldLabel>
               <Input
                 id="runner-token"
                 autoComplete="current-password"
@@ -139,8 +141,8 @@ export function AuthDialog({ runner }: { runner: Runner }) {
                 aria-invalid={Boolean(error)}
               />
               <FieldDescription>
-                Usa RUNNER_API_TOKEN de tu archivo local .dev.vars. La clave del
-                modelo permanece en el servidor.
+                Use RUNNER_API_TOKEN from your local .dev.vars file. The model
+                API key stays on the server.
               </FieldDescription>
             </Field>
             <FormError error={error} />
@@ -150,7 +152,7 @@ export function AuthDialog({ runner }: { runner: Runner }) {
               ) : (
                 <LockKeyhole data-icon="inline-start" />
               )}
-              {pending ? "Conectando…" : "Conectar"}
+              {pending ? "Connecting…" : "Connect"}
             </Button>
           </FieldGroup>
         </form>
@@ -203,17 +205,17 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cloud aria-hidden="true" />
-            Nueva sesión en la nube
+            New cloud session
           </DialogTitle>
           <DialogDescription>
-            Elige un repositorio y una tarea. Podrás conversar con el agente y
-            revisar sus cambios aquí.
+            Choose a repository and a task. Chat with the agent and review its
+            changes here.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup>
             <Field>
-              <FieldLabel id="agent-choice">Agente</FieldLabel>
+              <FieldLabel id="agent-choice">Agent</FieldLabel>
               <ToggleGroup
                 type="single"
                 value={agent}
@@ -238,8 +240,7 @@ export function NewSessionDialog({
               <Alert>
                 <Github />
                 <AlertDescription>
-                  Conecta GitHub para elegir tus repositorios públicos y
-                  privados.
+                  Connect GitHub to choose your public and private repositories.
                   <GitHubConnectButton runner={runner} />
                 </AlertDescription>
               </Alert>
@@ -248,7 +249,7 @@ export function NewSessionDialog({
               <>
                 <Field>
                   <FieldLabel htmlFor="repo-search">
-                    Buscar repositorios
+                    Search repositories
                   </FieldLabel>
                   <InputGroup>
                     <InputGroupInput
@@ -256,7 +257,7 @@ export function NewSessionDialog({
                       type="search"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Buscar entre los repositorios cargados"
+                      placeholder="Search loaded repositories"
                     />
                     <InputGroupAddon>
                       <Search aria-hidden="true" />
@@ -266,7 +267,7 @@ export function NewSessionDialog({
                 <Field data-disabled={runner.catalogBusy && !options.length}>
                   <FieldLabel htmlFor="repo-select">
                     <FolderGit2 aria-hidden="true" />
-                    Repositorio
+                    Repository
                   </FieldLabel>
                   <NativeSelect
                     id="repo-select"
@@ -285,7 +286,7 @@ export function NewSessionDialog({
                     required
                   >
                     <NativeSelectOption value="">
-                      Selecciona un repositorio
+                      Select a repository
                     </NativeSelectOption>
                     {runner.repository &&
                     !options.some(
@@ -297,7 +298,7 @@ export function NewSessionDialog({
                     ) : null}
                     {options.map((repo) => (
                       <NativeSelectOption key={repo.url} value={repo.url}>
-                        {repo.private ? "Privado" : "Público"} · {repo.fullName}
+                        {repo.private ? "Private" : "Public"} · {repo.fullName}
                       </NativeSelectOption>
                     ))}
                     {example ? (
@@ -313,17 +314,17 @@ export function NewSessionDialog({
                         role="status"
                       >
                         <Spinner aria-hidden="true" />
-                        Cargando repositorios…{" "}
+                        Loading repositories…{" "}
                       </span>
                     ) : null}
-                    Mostrando {runner.repositories.length} de{" "}
+                    Showing {runner.repositories.length} of{" "}
                     {Math.max(
                       runner.repositoryTotal,
                       runner.repositories.length,
                     )}{" "}
-                    repositorios.
+                    repositories.
                     {query
-                      ? ` ${options.length} coincidencias entre los cargados.`
+                      ? ` ${options.length} matches among loaded repositories.`
                       : ""}
                   </FieldDescription>
                   {runner.hasMore ? (
@@ -339,8 +340,8 @@ export function NewSessionDialog({
                         <ChevronsDown data-icon="inline-start" />
                       )}
                       {runner.catalogBusy
-                        ? "Cargando…"
-                        : "Cargar más repositorios"}
+                        ? "Loading…"
+                        : "Load more repositories"}
                     </Button>
                   ) : null}
                 </Field>
@@ -350,15 +351,15 @@ export function NewSessionDialog({
               <Alert>
                 <Cloud />
                 <AlertDescription>
-                  Repositorio de ejemplo: octocat/Hello-World.
+                  Example repository: octocat/Hello-World.
                 </AlertDescription>
               </Alert>
             ) : null}
             <Field>
               <FieldLabel htmlFor="repo-ref">
                 <GitBranch aria-hidden="true" />
-                Rama o etiqueta{" "}
-                <span className="text-muted-foreground">opcional</span>
+                Branch or tag{" "}
+                <span className="text-muted-foreground">optional</span>
               </FieldLabel>
               <Input
                 id="repo-ref"
@@ -366,12 +367,14 @@ export function NewSessionDialog({
                 value={ref}
                 onChange={(event) => setRef(event.target.value)}
                 placeholder={
-                  runner.repository?.defaultBranch || "Rama predeterminada"
+                  runner.repository?.defaultBranch || "Default branch"
                 }
               />
             </Field>
             <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="task-prompt">¿Qué quieres hacer?</FieldLabel>
+              <FieldLabel htmlFor="task-prompt">
+                What would you like to do?
+              </FieldLabel>
               <Textarea
                 id="task-prompt"
                 rows={5}
@@ -379,19 +382,18 @@ export function NewSessionDialog({
                 required
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Describe el cambio, el resultado esperado y las pruebas que debe ejecutar…"
+                placeholder="Describe the change, the expected result, and the checks to run…"
               />
               <FieldDescription>
-                La sesión se ejecuta con Qwen. Podrás seguir enviando
-                instrucciones en su chat.
+                This session runs with Qwen. Continue sending instructions in
+                its chat.
               </FieldDescription>
             </Field>
             <FormError error={error} />
             {runner.hasActiveRun && !runner.busy ? (
               <Alert>
                 <AlertDescription>
-                  Hay una tarea en curso. Ábrela en Sesiones para continuar o
-                  detenerla.
+                  A task is running. Open it in Sessions to continue or stop it.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -402,11 +404,11 @@ export function NewSessionDialog({
                 onClick={() => {
                   setExample(true);
                   setPrompt(
-                    "Crea NOTES.md con un resumen del repositorio. Comprueba que existe. No hagas commit.",
+                    "Create NOTES.md with a repository summary. Verify that it exists. Do not commit.",
                   );
                 }}
               >
-                Usar ejemplo público
+                Use public example
               </Button>
               <Button
                 type="submit"
@@ -421,9 +423,7 @@ export function NewSessionDialog({
                 ) : (
                   <Play data-icon="inline-start" />
                 )}
-                {runner.busy
-                  ? "Preparando sesión…"
-                  : "Iniciar sesión de trabajo"}
+                {runner.busy ? "Preparing session…" : "Start work session"}
               </Button>
             </DialogFooter>
           </FieldGroup>
@@ -456,9 +456,9 @@ export function SettingsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Tu espacio</DialogTitle>
+          <DialogTitle>Your workspace</DialogTitle>
           <DialogDescription>
-            Conexiones de este runner y acceso a tus repositorios.
+            Runner connections and repository access.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-5">
@@ -467,7 +467,7 @@ export function SettingsDialog({
             <div>
               <strong>Cloudflare Sandbox</strong>
               <p className="text-sm text-muted-foreground">
-                Pi y OpenCode con Qwen en la nube.
+                Pi and OpenCode with Qwen in the cloud.
               </p>
             </div>
           </div>
@@ -480,7 +480,7 @@ export function SettingsDialog({
                 <p className="text-sm text-muted-foreground">
                   {runner.github?.connected
                     ? runner.github.accounts.join(", ")
-                    : "Sin conectar"}
+                    : "Not connected"}
                 </p>
               </div>
             </div>
@@ -493,13 +493,13 @@ export function SettingsDialog({
               ) : (
                 <Unplug data-icon="inline-start" />
               )}
-              Desconectar GitHub
+              Disconnect GitHub
             </Button>
           ) : null}
           <Separator />
           <p className="text-xs text-muted-foreground">
-            Las claves del modelo y de GitHub permanecen en el servidor. El
-            agente tiene acceso al repositorio que eliges.
+            Model and GitHub credentials stay on the server. The agent can
+            access the repository you choose.
           </p>
         </div>
       </DialogContent>
@@ -559,17 +559,17 @@ export function PublishDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitPullRequest aria-hidden="true" />
-            Crear pull request
+            Create pull request
           </DialogTitle>
           <DialogDescription>
-            Publica los cambios revisados en una rama propia y un PR en
-            borrador.
+            Publish reviewed changes to a dedicated branch and a draft pull
+            request.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="pr-title">Título</FieldLabel>
+              <FieldLabel htmlFor="pr-title">Title</FieldLabel>
               <Input
                 id="pr-title"
                 required
@@ -581,7 +581,7 @@ export function PublishDialog({
             </Field>
             <Field>
               <FieldLabel htmlFor="pr-description">
-                Descripción y pruebas
+                Description and checks
               </FieldLabel>
               <Textarea
                 id="pr-description"
@@ -589,13 +589,13 @@ export function PublishDialog({
                 maxLength={20000}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="Resume los cambios y las pruebas realizadas"
+                placeholder="Summarize the changes and checks performed"
               />
             </Field>
             <FormError error={error} />
             <FieldDescription>
-              La GitHub App necesita Contents y Pull requests en Read and write,
-              aprobados en su instalación.
+              The GitHub App needs Contents and Pull requests set to Read and
+              write, approved for its installation.
             </FieldDescription>
             <div className="flex flex-wrap gap-3">
               {runner.github?.permissionsUrl ? (
@@ -605,7 +605,7 @@ export function PublishDialog({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Configurar permisos
+                    Configure permissions
                     <ArrowUpRight data-icon="inline-end" />
                   </a>
                 </Button>
@@ -616,7 +616,7 @@ export function PublishDialog({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Revisar instalación
+                  Review installation
                   <ArrowUpRight data-icon="inline-end" />
                 </a>
               </Button>
@@ -627,7 +627,7 @@ export function PublishDialog({
               ) : (
                 <Github data-icon="inline-start" />
               )}
-              {pending ? "Creando PR…" : "Crear PR en borrador"}
+              {pending ? "Creating PR…" : "Create draft PR"}
             </Button>
           </FieldGroup>
         </form>

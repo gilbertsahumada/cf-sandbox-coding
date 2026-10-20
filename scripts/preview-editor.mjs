@@ -63,9 +63,9 @@ const tasks = new Map([
           number: 1,
           id: "first",
           prompt:
-            "Organiza la interfaz como un editor: sesiones, cambios y chat del agente. Conserva la conexión con GitHub.",
+            "Arrange the interface as an editor: sessions, changes, and agent chat. Keep the GitHub connection.",
           response:
-            "La estructura del workspace está lista. Separé la navegación de sesiones, la revisión de cambios y la conversación.\n\nTambién conservé la recuperación de tareas y los logs en tiempo real. Puedes revisar los tres archivos modificados en el panel central.\n\n¿Quieres que ajustemos ahora el espacio del chat?",
+            "The workspace layout is ready. Session navigation, change review, and conversation now have dedicated panels.\n\nTask recovery and live logs are preserved. Review the three changed files in the center panel.\n\nWould you like to adjust the chat panel next?",
           state: "succeeded",
           startedAt: Date.now() - 120000,
         },
@@ -87,8 +87,8 @@ function finish(task) {
   task.turns.at(-1).state = "succeeded";
   task.turns.at(-1).response =
     task.turns.length === 1
-      ? "La sesión está lista. ¿Continúo con el cambio?"
-      : "Continué con el mismo contexto y conservé los cambios del turno anterior.\nEl texto <img src=x onerror=alert(1)> se muestra literalmente.";
+      ? "The session is ready. Should I continue with the change?"
+      : "I continued with the same context and preserved the previous changes.\nThe text <img src=x onerror=alert(1)> is displayed literally.";
 }
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost"),
@@ -122,7 +122,7 @@ createServer(async (req, res) => {
       uniqueMessages: requests.size,
     });
   if (path.startsWith("/github")) {
-    if (!authenticated) return json({ message: "Sin sesión" }, 401);
+    if (!authenticated) return json({ message: "Not signed in" }, 401);
     if (path === "/github/status")
       return json({
         connected: github,
@@ -156,7 +156,7 @@ createServer(async (req, res) => {
   }
   const match = /^\/sandboxes\/([^/]+)\/([^/]+)$/.exec(path);
   if (match) {
-    if (!authenticated) return json({ message: "Sin sesión" }, 401);
+    if (!authenticated) return json({ message: "Not signed in" }, 401);
     const [, id, resource] = match;
     let task = tasks.get(id);
     if (resource === "repository") {
@@ -191,8 +191,7 @@ createServer(async (req, res) => {
       clearTimeout(task.timer);
       task.state = "cancelled";
       task.turns.at(-1).state = "cancelled";
-      task.turns.at(-1).response =
-        "La tarea se detuvo. Los cambios se conservaron.";
+      task.turns.at(-1).response = "The task stopped. Changes were preserved.";
       return json({ state: "cancelled", containerRunning: false });
     }
     if (resource === "task")
@@ -234,7 +233,7 @@ createServer(async (req, res) => {
         return json(
           {
             message:
-              "Aprueba Contents y Pull requests en GitHub para publicar.",
+              "Approve Contents and Pull requests permissions on GitHub to publish.",
           },
           409,
         );

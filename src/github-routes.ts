@@ -9,17 +9,17 @@ function flowState(request: Request): string {
 export async function githubCallback(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const state = url.searchParams.get('state') || '';
-  if (!validState(state, flowState(request))) return new Response('La conexión con GitHub no pertenece a este navegador o venció. Vuelve a la interfaz y conecta de nuevo.', { status: 400, headers });
+  if (!validState(state, flowState(request))) return new Response('The GitHub connection expired or belongs to another browser. Return to the app and reconnect.', { status: 400, headers });
   const connection = env.GITHUB.getByName('owner');
   try {
     if (url.pathname === '/github/manifest/callback') {
       const code = url.searchParams.get('code');
-      if (!code || code.length > 256) return new Response('GitHub no envió un código válido.', { status: 400, headers });
+      if (!code || code.length > 256) return new Response('GitHub did not return a valid code.', { status: 400, headers });
       const location = await connection.completeManifest(code, state);
       return new Response(null, { status: 303, headers: { ...headers, location } });
     }
     const id = Number(url.searchParams.get('installation_id'));
-    if (!Number.isSafeInteger(id) || id <= 0) return new Response('GitHub no envió una instalación válida.', { status: 400, headers });
+    if (!Number.isSafeInteger(id) || id <= 0) return new Response('GitHub did not return a valid installation.', { status: 400, headers });
     await connection.completeInstallation(id, state);
     return new Response(null, { status: 303, headers: { ...headers, location: '/?github=connected', 'set-cookie': cookie('', true) } });
   } catch (error) {
@@ -29,8 +29,8 @@ export async function githubCallback(request: Request, env: Env): Promise<Respon
     await connection.recordSetupFailure(detail.slice(0, 240));
     const status = await connection.status();
     const message = status.setupExpired
-      ? 'El intento de conexión con GitHub venció. Vuelve a la interfaz y pulsa Conectar GitHub para iniciar otro intento.'
-      : 'GitHub no pudo completar el registro. El diagnóstico quedó guardado para revisar el problema. Vuelve a la interfaz para continuar.';
+      ? 'The GitHub connection attempt expired. Return to the app and click Connect GitHub to try again.'
+      : 'GitHub could not complete registration. Diagnostics were saved for review. Return to the app to continue.';
     return new Response(message, { status: 400, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } });
   }
 }
@@ -47,7 +47,7 @@ export async function githubRoute(request: Request, env: Env): Promise<Response>
     if (url.pathname === '/github/selected-repository' && request.method === 'GET') return Response.json(await connection.selectedRepository(), { headers });
     if (url.pathname === '/github/selected-repository' && request.method === 'PUT') {
       const selection = repositorySelection(await request.json().catch(() => null));
-      if (!selection) return Response.json({ message: 'Elige un repositorio válido.' }, { status: 400, headers });
+      if (!selection) return Response.json({ message: 'Choose a valid repository.' }, { status: 400, headers });
       return Response.json(await connection.rememberRepository(selection), { headers });
     }
     if (url.pathname === '/github/repositories' && request.method === 'GET') {
@@ -58,6 +58,6 @@ export async function githubRoute(request: Request, env: Env): Promise<Response>
     if (url.pathname === '/github/connection' && request.method === 'DELETE') return Response.json(await connection.disconnect(), { headers });
     return new Response('Not found', { status: 404, headers });
   } catch (error) {
-    return Response.json({ message: error instanceof Error ? error.message : 'No se pudo consultar GitHub.' }, { status: 502, headers });
+    return Response.json({ message: error instanceof Error ? error.message : 'Could not query GitHub.' }, { status: 502, headers });
   }
 }

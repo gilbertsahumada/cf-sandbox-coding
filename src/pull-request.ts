@@ -11,24 +11,24 @@ export type Proposal = Changes & { baseCommit: string; baseBranch: string };
 export type PullRequest = { url: string; number: number; branch: string };
 export function validateChanges(input: unknown): Changes {
   const changes = ChangeSet.parse(input);
-  if (!changes.files.length) throw Error('La tarea no tiene cambios para publicar.');
+  if (!changes.files.length) throw Error('This task has no changes to publish.');
   const paths = new Set<string>();
   let size = 0;
   for (const file of changes.files) {
-    if (paths.has(file.path)) throw Error('La propuesta contiene rutas repetidas.');
+    if (paths.has(file.path)) throw Error('The proposal contains duplicate paths.');
     paths.add(file.path);
-    if (file.path.startsWith('.github/workflows/')) throw Error('Esta propuesta modifica workflows. Descarga el patch para revisarla y publicarla localmente.');
-    if (!['.env.example', '.dev.vars.example'].includes(file.path.split('/').at(-1)!) && /(^|\/)(\.env(?:\..*)?|\.dev\.vars(?:\..*)?|id_rsa|id_ed25519)$|\.(pem|key)$/i.test(file.path)) throw Error('La propuesta contiene un archivo de credenciales; revísala localmente.');
-    if (changes.files.some(other => other.path !== file.path && other.path.startsWith(file.path + '/'))) throw Error('La propuesta cambia un archivo por un directorio o viceversa. Descarga el patch para publicarla localmente.');
+    if (file.path.startsWith('.github/workflows/')) throw Error('This proposal modifies workflows. Download the patch to review and publish it locally.');
+    if (!['.env.example', '.dev.vars.example'].includes(file.path.split('/').at(-1)!) && /(^|\/)(\.env(?:\..*)?|\.dev\.vars(?:\..*)?|id_rsa|id_ed25519)$|\.(pem|key)$/i.test(file.path)) throw Error('The proposal contains a credential file. Review it locally.');
+    if (changes.files.some(other => other.path !== file.path && other.path.startsWith(file.path + '/'))) throw Error('The proposal replaces a file with a directory or vice versa. Download the patch to publish it locally.');
     if ((file.mode === '160000') !== (file.type === 'commit')) throw Error('Invalid Git object mode');
     if (file.sha && file.type === 'blob') {
       if (file.content === undefined || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.content)) throw Error('Invalid blob encoding');
       const bytes = Buffer.from(file.content, 'base64'); size += bytes.length;
       const sha = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
-      if (sha !== file.sha) throw Error('El contenido del archivo no coincide con su identificador Git.');
+      if (sha !== file.sha) throw Error('The file content does not match its Git identifier.');
     } else if (file.content !== undefined) throw Error('Unexpected blob content');
   }
-  if (size > 5 * 1024 * 1024) throw Error('La propuesta supera 5 MB. Descarga el patch.');
+  if (size > 5 * 1024 * 1024) throw Error('The proposal exceeds 5 MB. Download the patch.');
   return changes;
 }
 
@@ -53,7 +53,7 @@ export async function publishProposal(api: Api, repo: string, taskId: string, pr
   let ref;
   try { ref = await api(`${root}/git/ref/heads/${branch}`); }
   catch (error) { if ((error as { status?: number }).status !== 404) throw error; }
-  if (ref && ref.object.sha !== commit) throw Error('La rama de esta tarea ya existe con otro contenido. No se sobrescribió.');
+  if (ref && ref.object.sha !== commit) throw Error('The task branch already exists with different content. It was not overwritten.');
   if (!ref) {
     try { await api(`${root}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit }); }
     catch (error) {
@@ -67,6 +67,6 @@ export async function publishProposal(api: Api, repo: string, taskId: string, pr
     try { pr = await api(`${root}/pulls`, { title, body, head: branch, base: proposal.baseBranch, draft: true }); }
     catch (error) { pr = (await api(`${root}/pulls${query}`))[0]; if (!pr) throw error; }
   }
-  if (!Number.isSafeInteger(pr.number) || pr.html_url !== `https://github.com/${repo}/pull/${pr.number}`) throw Error('GitHub devolvió un enlace inesperado.');
+  if (!Number.isSafeInteger(pr.number) || pr.html_url !== `https://github.com/${repo}/pull/${pr.number}`) throw Error('GitHub returned an unexpected link.');
   return { url: pr.html_url, number: pr.number, branch };
 }

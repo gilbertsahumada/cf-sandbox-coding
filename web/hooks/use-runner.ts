@@ -35,7 +35,9 @@ function initialHistory(): Run[] {
     : runs;
 }
 const message = (error: unknown) =>
-  error instanceof Error ? error.message : "No se pudo completar la operación.";
+  error instanceof Error
+    ? error.message
+    : "The operation could not be completed.";
 export function useRunner() {
   const [runs, setRuns] = useState<Run[]>(initialHistory);
   const [selectedId, setSelectedId] = useState(() => runs[0]?.id || null);
@@ -117,7 +119,7 @@ export function useRunner() {
       if (response.status === 401) {
         clearSession();
         setAuthOpen(true);
-        throw Error("Tu sesión terminó. Conecta para continuar.");
+        throw Error("Your session expired. Sign in to continue.");
       }
       if (!response.ok) {
         let detail = "";
@@ -127,7 +129,7 @@ export function useRunner() {
             data.message || data.stderr || data.error?.[0]?.message || "";
         } catch {}
         throw Error(
-          detail || `No se pudo completar la solicitud (${response.status}).`,
+          detail || `The request could not be completed (${response.status}).`,
         );
       }
       return response;
@@ -332,7 +334,7 @@ export function useRunner() {
     const controller = new AbortController();
     setLoadingTask(true);
     setLoadingDiff(true);
-    setStreamState("Conectando");
+    setStreamState("Connecting");
     const transcript = assistantStream(setLiveText);
     const activity = () =>
       activityRef.current
@@ -412,7 +414,7 @@ export function useRunner() {
       queueDiff(true);
       source = new EventSource(`/sandboxes/${run.id}/events?turn=${info.turn}`);
       source.onopen = () => {
-        if (current) setStreamState("En vivo");
+        if (current) setStreamState("Live");
       };
       source.addEventListener("turn", (event) => {
         if (current && JSON.parse(event.data).turn !== info.turn)
@@ -422,7 +424,7 @@ export function useRunner() {
         if (current) {
           transcript.reset();
           view = activity();
-          view?.note("Salida archivada más reciente.");
+          view?.note("Latest archived output.");
         }
       });
       source.addEventListener("stdout", (event) => {
@@ -436,7 +438,7 @@ export function useRunner() {
         if (current) view?.stderr(JSON.parse(event.data));
       });
       source.addEventListener("notice", () => {
-        if (current) setStreamState("Reconectando");
+        if (current) setStreamState("Reconnecting");
       });
       source.addEventListener("status", (event) => {
         if (!current) return;
@@ -459,7 +461,7 @@ export function useRunner() {
                     {
                       number: 0,
                       id: "legacy",
-                      prompt: "Resultado de esta tarea",
+                      prompt: "Task result",
                       response: status.result || status.error,
                       state,
                       startedAt: run.startedAt || 0,
@@ -473,7 +475,7 @@ export function useRunner() {
         source?.close();
         view?.finish();
         terminal = true;
-        setStreamState("Guardado");
+        setStreamState("Saved");
         queueDiff(true);
         void freshConversation()
           .then((data) => {
@@ -490,7 +492,7 @@ export function useRunner() {
                         {
                           number: 0,
                           id: "legacy",
-                          prompt: "Resultado de esta tarea",
+                          prompt: "Task result",
                           response: status.result || status.error,
                           state: status.state,
                           startedAt: run.startedAt || 0,
@@ -508,7 +510,7 @@ export function useRunner() {
       });
       source.onerror = () => {
         if (!current || terminal) return;
-        setStreamState("Reconectando");
+        setStreamState("Reconnecting");
         if (Date.now() - authCheckedAt > 10000) {
           authCheckedAt = Date.now();
           void request("/session").catch((error) => {
@@ -552,7 +554,7 @@ export function useRunner() {
     });
     if (!response.ok)
       throw Error(
-        "No se pudo conectar. Usa RUNNER_API_TOKEN, no la clave de Qwen.",
+        "Could not sign in. Use RUNNER_API_TOKEN, not the Qwen API key.",
       );
     setAuthOpen(false);
     setConnected(true);
@@ -561,7 +563,7 @@ export function useRunner() {
   const logout = async () => {
     await request("/session", undefined, "DELETE");
     clearSession();
-    setNotice("Sesión cerrada. El agente en la nube continúa trabajando.");
+    setNotice("Signed out. Your cloud agent continues working.");
   };
   const start = async (
     agent: Agent,
@@ -572,11 +574,11 @@ export function useRunner() {
   ) => {
     if (!connected) {
       setAuthOpen(true);
-      throw Error("Conecta tu espacio para empezar.");
+      throw Error("Sign in to your workspace to get started.");
     }
     if (busy || runs.some((run) => isActive(run.state)))
-      throw Error("Ya hay una tarea en curso. Ábrela para seguir trabajando.");
-    if (!repo && !example) throw Error("Elige un repositorio de GitHub.");
+      throw Error("A task is already running. Open it to continue working.");
+    if (!repo && !example) throw Error("Choose a GitHub repository.");
     const run: Run = {
       id: `${agent}-${crypto.randomUUID()}`,
       agent,
@@ -619,7 +621,7 @@ export function useRunner() {
       sending
     )
       throw Error(
-        "Espera a que termine el agente antes de enviar otro mensaje.",
+        "Wait for the agent to finish before sending another message.",
       );
     const run = selected;
     if (

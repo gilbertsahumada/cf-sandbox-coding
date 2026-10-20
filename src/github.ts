@@ -17,18 +17,18 @@ export class GitHubConnection extends DurableObject<Env> {
   }
   async completeManifest(code: string, state: string) {
     try { return await this.exchangeManifest(code, state); } catch (error) {
-      this.ctx.storage.kv.put('lastError', { stage: 'manifest', message: error instanceof Error ? error.message : 'No se pudo intercambiar el registro.' });
+      this.ctx.storage.kv.put('lastError', { stage: 'manifest', message: error instanceof Error ? error.message : 'Could not exchange the app registration.' });
       throw error;
     }
   }
   private async exchangeManifest(code: string, state: string) {
     const flow = this.ctx.storage.kv.get<Flow>('flow');
-    if (!flow || flow.expires < Date.now() || !validState(state, flow.state)) throw new Error('La conexión venció. Pulsa Conectar GitHub para volver a intentarlo.');
+    if (!flow || flow.expires < Date.now() || !validState(state, flow.state)) throw new Error('The connection expired. Click Connect GitHub to try again.');
     const existing = this.ctx.storage.kv.get<GitHubApp>('app');
     if (existing && flow.phase === 'install') return this.installUrl(existing.slug, state);
-    if (!['manifest', 'exchange'].includes(flow.phase)) throw new Error('El registro ya se procesó.');
+    if (!['manifest', 'exchange'].includes(flow.phase)) throw new Error('The registration has already been processed.');
     const hash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code))).toString('hex');
-    if (flow.codeHash && !validState(hash, flow.codeHash)) throw new Error('El código no coincide con el registro en curso.');
+    if (flow.codeHash && !validState(hash, flow.codeHash)) throw new Error('The code does not match the current registration.');
     this.ctx.storage.kv.put('flow', { ...flow, phase: 'exchange', codeHash: hash });
     try {
       const data = await githubRequest(`/app-manifests/${encodeURIComponent(code)}/conversions`, undefined, {});
@@ -36,7 +36,7 @@ export class GitHubConnection extends DurableObject<Env> {
       const slug = typeof data.slug === 'string' ? data.slug : '';
       if (!Number.isSafeInteger(id) || typeof data.pem !== 'string' || !/^[a-zA-Z0-9-]+$/.test(slug)) {
         this.ctx.storage.kv.put('registrationShape', { idType: typeof data.id, hasPem: typeof data.pem === 'string', slug });
-        throw new Error('GitHub devolvió una configuración de registro inesperada.');
+        throw new Error('GitHub returned unexpected registration settings.');
       }
       const app: GitHubApp = { id, slug, pem: data.pem, owner: data.owner?.login || '' };
       this.ctx.storage.kv.put('app', app);
@@ -44,7 +44,7 @@ export class GitHubConnection extends DurableObject<Env> {
       this.ctx.storage.kv.delete('lastError');
       return this.installUrl(app.slug, state);
     } catch (error) {
-      this.ctx.storage.kv.put('lastError', { stage: 'manifest', message: error instanceof Error ? error.message : 'No se pudo intercambiar el registro.' });
+      this.ctx.storage.kv.put('lastError', { stage: 'manifest', message: error instanceof Error ? error.message : 'Could not exchange the app registration.' });
       throw error;
     }
   }
@@ -52,7 +52,7 @@ export class GitHubConnection extends DurableObject<Env> {
     this.checkFlow(state, 'install');
     const app = this.app();
     const info = await githubRequest(`/app/installations/${id}`, appJwt(app));
-    if (info.app_id !== app.id || info.suspended_at) throw new Error('La instalación no corresponde a esta aplicación o está suspendida.');
+    if (info.app_id !== app.id || info.suspended_at) throw new Error('The installation does not belong to this app or is suspended.');
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];
     this.ctx.storage.kv.put('installations', [...installations.filter(item => item.id !== id), { id, account: info.account.login }]);
     this.ctx.storage.kv.delete('flow');
@@ -71,7 +71,7 @@ export class GitHubConnection extends DurableObject<Env> {
   }
   async repositories(page: number) {
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];
-    if (!installations.length) throw new Error('Conecta GitHub para elegir tus repositorios.');
+    if (!installations.length) throw new Error('Connect GitHub to choose your repositories.');
     const batches = await Promise.all(installations.map(async installation => {
       const token = await this.installationToken(installation.id);
       const response = await githubRequest(`/installation/repositories?per_page=100&page=${page}`, token);
@@ -85,18 +85,18 @@ export class GitHubConnection extends DurableObject<Env> {
   async repository(installationId: number, repositoryId: number): Promise<GitHubRepository> {
     const token = await this.installationToken(installationId, repositoryId);
     const repo = await githubRequest(`/repositories/${repositoryId}`, token);
-    if (repo.id !== repositoryId || !/^[\w.-]+\/[\w.-]+$/.test(repo.full_name)) throw new Error('Repositorio inválido.');
+    if (repo.id !== repositoryId || !/^[\w.-]+\/[\w.-]+$/.test(repo.full_name)) throw new Error('Invalid repository.');
     return { installationId, repositoryId, fullName: repo.full_name, url: `https://github.com/${repo.full_name}.git`, private: repo.private, defaultBranch: repo.default_branch };
   }
   async selectedRepository(): Promise<{ repository: GitHubRepository | null; warning?: string }> {
     const selection = this.ctx.storage.kv.get<RepositorySelection>('selectedRepository');
     if (!selection) return { repository: null };
     try { return { repository: await this.repository(selection.installationId, selection.repositoryId) }; }
-    catch { return { repository: null, warning: 'No pudimos recuperar el repositorio anterior. Comprueba que siga autorizado en GitHub.' }; }
+    catch { return { repository: null, warning: 'Could not restore the previous repository. Check that it is still authorized on GitHub.' }; }
   }
   async rememberRepository(value: unknown): Promise<{ repository: GitHubRepository }> {
     const selection = repositorySelection(value);
-    if (!selection) throw new Error('Repositorio inválido.');
+    if (!selection) throw new Error('Invalid repository.');
     const repository = await this.repository(selection.installationId, selection.repositoryId);
     this.ctx.storage.kv.put('selectedRepository', selection);
     return { repository };
@@ -112,7 +112,7 @@ export class GitHubConnection extends DurableObject<Env> {
       const saved = this.ctx.storage.kv.get<{ commit?: string; pr?: PullRequest }>(key) || {};
       if (saved.pr) return saved.pr;
       const repository = await this.repository(grant.installationId, grant.repositoryId);
-      if (repository.fullName !== grant.fullName) throw Error('El repositorio cambió de nombre. Ejecuta una tarea nueva.');
+      if (repository.fullName !== grant.fullName) throw Error('The repository was renamed. Start a new task.');
       validateChanges(proposal);
       let token: string;
       try {
@@ -120,7 +120,7 @@ export class GitHubConnection extends DurableObject<Env> {
           repository_ids: [grant.repositoryId], permissions: { contents: 'write', pull_requests: 'write' },
         });
         token = result.token;
-      } catch { throw Error('Habilita Contents y Pull requests en Read and write en la configuración de la GitHub App y aprueba los nuevos permisos en su instalación.'); }
+      } catch { throw Error('Set Contents and Pull requests to Read and write in the GitHub App settings, then approve the new installation permissions.'); }
       const pr = await publishProposal((path, payload, method) => githubRequest(path, token, payload, method), repository.fullName, taskId,
         proposal, title, body, saved, value => this.ctx.storage.kv.put(key, value));
       this.ctx.storage.kv.put(key, { pr });
@@ -139,24 +139,24 @@ export class GitHubConnection extends DurableObject<Env> {
     const app = this.ctx.storage.kv.get<GitHubApp>('app');
     if (app) {
       const results = await Promise.allSettled(installations.map(item => githubRequest(`/app/installations/${item.id}`, appJwt(app), undefined, 'DELETE')));
-      if (results.some(result => result.status === 'rejected')) return { disconnected: true, warning: 'El runner se desconectó. Revisa en GitHub las instalaciones que no se pudieron revocar.' };
+      if (results.some(result => result.status === 'rejected')) return { disconnected: true, warning: 'The runner disconnected. Review any installations that could not be revoked on GitHub.' };
     }
     return { disconnected: true };
   }
   private app(): GitHubApp {
     const app = this.ctx.storage.kv.get<GitHubApp>('app');
-    if (!app) throw new Error('Primero registra la conexión con GitHub.');
+    if (!app) throw new Error('Register the GitHub connection first.');
     return app;
   }
   private checkFlow(state: string, phase: Flow['phase']): Flow {
     const flow = this.ctx.storage.kv.get<Flow>('flow');
-    if (!flow || flow.expires < Date.now() || flow.phase !== phase || !validState(state, flow.state)) throw new Error('La conexión venció o no pertenece a este navegador. Vuelve a conectar GitHub.');
+    if (!flow || flow.expires < Date.now() || flow.phase !== phase || !validState(state, flow.state)) throw new Error('The connection expired or belongs to another browser. Reconnect GitHub.');
     return flow;
   }
   private installUrl(slug: string, state: string) { return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`; }
   private async installationToken(id: number, repositoryId?: number): Promise<string> {
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];
-    if (!installations.some(item => item.id === id)) throw new Error('Esta cuenta de GitHub no está conectada.');
+    if (!installations.some(item => item.id === id)) throw new Error('This GitHub account is not connected.');
     const key = `${id}:${repositoryId || 'list'}`;
     const cached = this.tokens.get(key);
     if (cached && cached.expires > Date.now() + 60_000) return cached.token;

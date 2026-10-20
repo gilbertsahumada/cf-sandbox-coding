@@ -75,9 +75,9 @@ export default {
         if (request.method === 'GET') return Response.json(await sandbox.conversation(), { headers });
         if (request.method === 'POST') {
           const parsed = ChatMessage.safeParse(await readJson(request));
-          if (!parsed.success) return Response.json({ message: 'Escribe un mensaje de hasta 32000 caracteres.' }, { status: 400, headers });
+          if (!parsed.success) return Response.json({ message: 'Enter a message of up to 32,000 characters.' }, { status: 400, headers });
           try { return Response.json(await sandbox.sendMessage(parsed.data.id, parsed.data.prompt), { status: 202, headers }); }
-          catch (error) { return Response.json({ message: error instanceof Error ? error.message : 'No se pudo continuar la conversación.' }, { status: 409, headers }); }
+          catch (error) { return Response.json({ message: error instanceof Error ? error.message : 'Could not continue the conversation.' }, { status: 409, headers }); }
         }
         return new Response('Method not allowed', { status: 405 });
       }
@@ -86,9 +86,9 @@ export default {
         if (request.method === 'GET') return Response.json(await sandbox.pullRequestStatus(), { headers });
         if (request.method === 'POST') {
           const parsed = z.object({ title: z.string().trim().min(1).max(200).refine(value => !/[\r\n]/.test(value)), description: z.string().trim().max(20000).default('') }).safeParse(await readJson(request));
-          if (!parsed.success) return Response.json({ message: 'Revisa el título y la descripción.' }, { status: 400, headers });
+          if (!parsed.success) return Response.json({ message: 'Check the title and description.' }, { status: 400, headers });
           try { return Response.json(await sandbox.createPullRequest(name, parsed.data.title, parsed.data.description), { status: 201, headers }); }
-          catch (error) { return Response.json({ message: error instanceof Error ? error.message : 'No se pudo crear el PR.' }, { status: 409, headers }); }
+          catch (error) { return Response.json({ message: error instanceof Error ? error.message : 'Could not create the PR.' }, { status: 409, headers }); }
         }
       }
       if (resource === 'events' && request.method === 'GET') {
