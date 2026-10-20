@@ -19,7 +19,7 @@ Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **
 3. Describe la tarea y pulsa **Ejecutar tarea**.
 4. Sigue la actividad, revisa **Cambios** y descarga el patch si quieres aplicarlo localmente.
 
-La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial guarda solo los identificadores y metadatos de las últimas 12 tareas públicas en este navegador. Los metadatos de tareas privadas solo permanecen en memoria de la pestaña y se eliminan de la interfaz al cerrar sesión. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
+La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial conserva las últimas 12 tareas en este navegador. Para tareas privadas solo conserva el identificador, agente, tiempos y estado; no guarda nombres de repositorios, ramas, instrucciones, logs ni cambios. Los nombres privados se sustituyen por una etiqueta genérica y esas entradas se eliminan al cerrar sesión. Un enlace `/?task=ID` permite recuperar una tarea existente después de autenticarte. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
 
 Los logs se actualizan cada 3,5 segundos. OpenCode emite sus herramientas y resultados desde su stream de eventos; Pi usa sus eventos JSON. La salida y los diffs se muestran como texto, sin interpretar HTML. La interfaz permite una tarea nueva a la vez por navegador y conserva el historial al recargar. Si cierras la página antes de que se envíe la instrucción al agente, inicia una tarea nueva.
 
@@ -135,7 +135,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 19 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 22 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check

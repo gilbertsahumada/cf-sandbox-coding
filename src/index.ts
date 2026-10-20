@@ -39,7 +39,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (['/github/manifest/callback', '/github/install/callback'].includes(path) && request.method === 'GET') return githubCallback(request, env);
-    if (["/", "/app.js", "/styles.css", "/favicon.svg"].includes(path) && ["GET", "HEAD"].includes(request.method)) {
+    if (["/", "/app.js", "/run-history.js", "/styles.css", "/favicon.svg"].includes(path) && ["GET", "HEAD"].includes(request.method)) {
       const response = await env.ASSETS.fetch(request);
       const headers = new Headers(response.headers);
       headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com");

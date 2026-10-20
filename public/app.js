@@ -1,3 +1,4 @@
+import { historyForStorage, recoveredRun } from './run-history.js';
 const $ = id => document.getElementById(id);
 const names = { pi: 'Pi', opencode: 'OpenCode' };
 const labels = { cloning: 'Preparando', running: 'En curso', succeeded: 'Completada', failed: 'Falló', lost: 'Entorno perdido', none: 'Sin tarea' };
@@ -7,10 +8,12 @@ let generation = 0;
 let diff = '';
 let busy = false;
 let history = [];
-try { history = JSON.parse(localStorage.getItem('sandbox-runs') || '[]'); if (!Array.isArray(history)) history = []; history = history.filter(run => typeof run.id === 'string' && /^[a-z0-9-]{1,63}$/.test(run.id) && names[run.agent] && typeof run.repository === 'string').slice(0, 12); } catch { history = []; }
+try { const stored = JSON.parse(localStorage.getItem('sandbox-runs') || '[]'); history = Array.isArray(stored) ? historyForStorage(stored) : []; } catch { history = []; }
+const requestedRun = recoveredRun(new URL(window.location.href).searchParams.get('task'));
+if (requestedRun) history = [history.find(run => run.id === requestedRun.id) || requestedRun, ...history.filter(run => run.id !== requestedRun.id)].slice(0, 12);
 // A closed tab cannot finish submitting a task that was still cloning.
 for (const run of history) if (run.state === 'cloning') { run.state = 'failed'; run.finishedAt ||= Date.now(); }
-function saveHistory() { try { localStorage.setItem('sandbox-runs', JSON.stringify(history.filter(run => !run.private))); } catch {} renderHistory(); }
+function saveHistory() { try { localStorage.setItem('sandbox-runs', JSON.stringify(historyForStorage(history))); } catch {} renderHistory(); }
 function showNotice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 function setConnected(value) {
   connected = value;
@@ -77,6 +80,7 @@ function state(run) {
   saveHistory(); updateSubmit();
 }
 function elapsed(run) {
+  if (!Number.isFinite(run.startedAt)) return 'Inicio no disponible';
   const seconds = Math.max(0, Math.floor(((run.finishedAt || Date.now()) - run.startedAt) / 1000));
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
 }
@@ -129,6 +133,7 @@ for (const name of ['activity', 'changes']) {
 $('download-diff').addEventListener('click', () => { const url = URL.createObjectURL(new Blob([diff], { type: 'text/plain;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${selected?.id || 'changes'}.patch`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 async function selectRun(run) {
   selected = run; const ticket = ++generation;
+  const page = new URL(window.location.href); page.searchParams.set('task', run.id); window.history.replaceState(null, '', page);
   $('workspace-title').textContent = run.repository.replace('https://github.com/', ''); $('run-meta').hidden = false; $('run-agent').textContent = names[run.agent]; $('run-repository').textContent = run.ref || 'Rama predeterminada'; $('run-time').textContent = elapsed(run); $('progress').hidden = false; $('result').hidden = true;
   showNotice(''); state(run); renderDiff(''); activity('', '', run);
   if (!connected || run.state === 'cloning') return;
@@ -163,7 +168,7 @@ $('task-form').addEventListener('submit', async event => {
     run.state = 'running'; busy = false; saveHistory(); updateSubmit(); selectRun(run);
   } catch (error) { run.state = 'failed'; run.finishedAt = Date.now(); busy = false; state(run); showNotice(error.message); activity('', error.message, run); }
 });
-$('new-task').addEventListener('click', () => { generation++; selected = null; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
+$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); generation++; selected = null; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
 $('example').addEventListener('click', () => { if (![...$('repository').options].some(option => option.value === 'https://github.com/octocat/Hello-World')) { const option = document.createElement('option'); option.value = 'https://github.com/octocat/Hello-World'; option.textContent = 'Público · octocat/Hello-World (ejemplo)'; $('repository').append(option); } $('repository').disabled = false; $('repository').value = 'https://github.com/octocat/Hello-World'; $('prompt').value = 'Crea un archivo NOTES.md con un breve resumen del repositorio. Comprueba que el archivo existe. No hagas commit.'; $('prompt').focus(); });
 
 let repositories = [];
