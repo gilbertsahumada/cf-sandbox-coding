@@ -2,6 +2,11 @@
 
 Este proyecto ejecuta Pi y OpenCode en Cloudflare Sandbox con un proveedor compatible con OpenAI. El código del proyecto puede ser el repositorio de entrada de sus propios agentes.
 
+## Repository language
+
+- Write code comments, commit messages, pull request titles and descriptions, and review comments in English.
+- Keep user-facing interface text in Spanish unless the task requests another language.
+
 ## Mejoras del propio proyecto
 
 - Resuelve una tarea concreta por ejecución y limita los cambios al problema solicitado.
