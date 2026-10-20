@@ -171,6 +171,23 @@ export class AgentSandbox extends DurableObject<Env> {
         await this.container.setInactivityTimeout(60_000);
 	}
 
+    async stopTask(): Promise<{ state: TaskStatus['state']; containerRunning: boolean }> {
+        return this.ctx.blockConcurrencyWhile(async () => {
+            const saved = this.ctx.storage.kv.get<TaskStatus>('result');
+            const hasTask = this.ctx.storage.kv.get(taskKey) !== undefined;
+            await this.ctx.storage.deleteAlarm();
+            try {
+                if (this.container.running) await this.container.destroy();
+            } catch (error) {
+                if (hasTask && !saved) await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
+                throw error;
+            }
+            if (hasTask && !saved) this.ctx.storage.kv.put('result', { state: 'failed', error: 'Task stopped by user' } satisfies TaskStatus);
+            const status = await this.readTask();
+            return { state: status.state, containerRunning: this.container.running };
+        });
+    }
+
 	async readTask(): Promise<TaskStatus> {
         const result = this.ctx.storage.kv.get<TaskStatus>("result");
         if (result) return result;
