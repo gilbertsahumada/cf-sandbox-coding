@@ -28,9 +28,9 @@ function updateSubmit() {
   $('submit-task').querySelector('span').textContent = busy || running ? 'Tarea en curso…' : 'Ejecutar tarea';
 }
 function authDialog() { $('auth-error').hidden = true; if (!$('auth-dialog').open) $('auth-dialog').showModal(); }
-async function api(path, body, method, signal) {
+async function api(path, body, method, signal, keepalive = false) {
   let response;
-  try { response = await fetch(path, { method: method || (body ? 'POST' : 'GET'), credentials: 'same-origin', cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal: signal || AbortSignal.timeout(180000) }); }
+  try { response = await fetch(path, { method: method || (body ? 'POST' : 'GET'), credentials: 'same-origin', cache: 'no-store', keepalive, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal: signal || AbortSignal.timeout(180000) }); }
   catch (error) { if (error.name === 'AbortError') throw error; throw new Error('No pudimos conectar con el runner. Revisa tu conexión e inténtalo de nuevo.'); }
   if (response.status === 401) { setConnected(false); authDialog(); throw new Error('Tu sesión terminó. Conecta de nuevo para continuar.'); }
   if (!response.ok) {
@@ -174,6 +174,7 @@ $('example').addEventListener('click', () => { if (![...$('repository').options]
 let repositories = [];
 let repositoryPage = 1;
 let githubGeneration = 0;
+let repositorySelectionWrite = Promise.resolve();
 function githubError(message) { $('github-error').textContent = message; $('github-error').hidden = !message; }
 function clearGitHub() {
   githubGeneration++; repositories = []; $('github-status').textContent = 'Sin conectar';
@@ -197,13 +198,24 @@ async function loadRepositories(append = false, ticket = githubGeneration) {
   $('github-load-more').disabled = true;
   const page = append ? repositoryPage + 1 : 1;
   try {
-    const data = await (await api(`/github/repositories?page=${page}`)).json();
+    const [pageResult, selectionResult] = await Promise.allSettled([
+      api(`/github/repositories?page=${page}`).then(response => response.json()),
+      append ? Promise.resolve(null) : api('/github/selected-repository').then(response => response.json()),
+    ]);
+    if (pageResult.status === 'rejected') throw pageResult.reason;
+    const data = pageResult.value;
+    const remembered = selectionResult.status === 'fulfilled' ? selectionResult.value : null;
     if (ticket !== githubGeneration || !connected) return;
     repositoryPage = page;
-    const items = append ? [...repositories, ...data.repositories] : data.repositories;
+    const items = append ? [...repositories, ...data.repositories] : [...(remembered?.repository ? [remembered.repository] : []), ...data.repositories];
     repositories = [...new Map(items.map(repo => [repo.url, repo])).values()];
     $('repository-search').disabled = false; $('github-load-more').hidden = !data.hasMore;
-    renderRepositories(); githubError('');
+    renderRepositories();
+    if (!append && remembered?.repository) {
+      $('repository').value = remembered.repository.url;
+      $('ref').placeholder = remembered.repository.defaultBranch || 'Rama predeterminada';
+    }
+    githubError(remembered?.warning || (selectionResult.status === 'rejected' ? 'No pudimos recuperar el repositorio anterior. Puedes elegirlo de nuevo.' : ''));
   } catch (error) { if (ticket === githubGeneration) githubError(error.message); }
   finally { $('github-load-more').disabled = false; }
 }
@@ -244,7 +256,19 @@ $('github-disconnect').addEventListener('click', async () => {
 });
 $('repository-search').addEventListener('input', renderRepositories);
 $('github-load-more').addEventListener('click', () => loadRepositories(true));
-$('repository').addEventListener('change', () => { const repo = repositories.find(item => item.url === $('repository').value); if (repo) $('ref').placeholder = repo.defaultBranch || 'Rama predeterminada'; });
+$('repository').addEventListener('change', () => {
+  const repo = repositories.find(item => item.url === $('repository').value);
+  if (!repo) return;
+  $('ref').placeholder = repo.defaultBranch || 'Rama predeterminada';
+  const ticket = githubGeneration;
+  repositorySelectionWrite = repositorySelectionWrite.catch(() => {}).then(async () => {
+    if (!connected || ticket !== githubGeneration) return;
+    try {
+      await api('/github/selected-repository', { installationId: repo.installationId, repositoryId: repo.repositoryId }, 'PUT', undefined, true);
+      if (ticket === githubGeneration) githubError('');
+    } catch (error) { if (ticket === githubGeneration) githubError(`No pudimos recordar el repositorio: ${error.message}`); }
+  });
+});
 renderHistory();
 (async () => {
   try { const response = await fetch('/session', { cache: 'no-store', credentials: 'same-origin' }); setConnected(response.ok); } catch { setConnected(false); showNotice('No pudimos comprobar la conexión con el runner.'); }

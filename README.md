@@ -34,6 +34,8 @@ La conexión usa una **GitHub App propia**, creada desde un manifiesto, con `Con
 3. Instala la app en la cuenta que contiene tus repositorios y elige cuáles autorizar.
 4. Al regresar, el selector mostrará los repositorios autorizados, con etiquetas **Público** o **Privado**. Para más de 100 repositorios usa **Cargar más repositorios**; la búsqueda filtra los repositorios ya cargados.
 
+La interfaz recuerda el último repositorio elegido en Cloudflare y lo recupera seleccionado al volver a abrirla, aunque no esté en la primera página del catálogo. Solo se guardan sus identificadores de instalación y repositorio; la recuperación valida el acceso con GitHub y obtiene sus metadatos actuales. Desconectar GitHub elimina esa preferencia.
+
 La app se registra como privada: solo se instala en la cuenta que la posee. Para repositorios propiedad de otra persona u organización hace falta una instalación autorizada por esa cuenta; esta conexión personal no hereda automáticamente todos los accesos de colaborador de tu usuario.
 
 Las claves de la GitHub App se guardan en el Durable Object `GITHUB`, dentro de Cloudflare. El navegador recibe únicamente metadatos del catálogo, nunca tokens o claves privadas. Cada clon usa un token de instalación de corta duración restringido al repositorio seleccionado. El proxy del Worker permite exclusivamente `git-upload-pack` de ese repositorio y bloquea pushes, otros repositorios y otras rutas de GitHub. La URL guardada en `.git/config` no contiene credenciales.
@@ -106,6 +108,8 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | GET | `/github/status` | Estado de la conexión, sin credenciales |
 | POST | `/github/connect` | Iniciar registro o instalación; retorno vinculado al navegador |
 | GET | `/github/repositories?page=1` | Catálogo paginado de repositorios autorizados |
+| GET | `/github/selected-repository` | Recuperar el repositorio recordado, validando su acceso actual |
+| PUT | `/github/selected-repository` | Recordar `{ "installationId": 123, "repositoryId": 456 }` después de comprobar acceso |
 | DELETE | `/github/connection` | Desconectar y revocar instalaciones |
 | GET | `/health` | Estado del Worker y agentes disponibles |
 | POST | `/sandboxes/:id/repository` | URL pública o `{ "installationId": 123, "repositoryId": 456, "ref": "main" }`; `ref` opcional |
@@ -136,7 +140,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 22 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 25 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check
