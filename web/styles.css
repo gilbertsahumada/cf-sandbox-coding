@@ -1423,3 +1423,30 @@ a {
 .activity-root { display: contents; }
 .activity-content { height: 100%; margin: 0; min-height: 0; }
 .activity-content[hidden] { display: none; }
+
+
+/* Official compact marks retain neutral contrast on the dark workspace. */
+.agent-logo {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.agent-logo-pi {
+  filter: brightness(0) invert(0.9);
+}
+.agent-mark {
+  border: none;
+  border-radius: 0;
+}
+.agent-mark > .agent-logo {
+  width: 14px;
+  height: 14px;
+}
+.session-agent-logo {
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+}

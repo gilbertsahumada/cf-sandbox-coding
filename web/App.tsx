@@ -23,7 +23,6 @@ import {
   LogOut,
   UserRound,
   Cpu,
-  Bot,
   Radio,
   ChevronsDown,
   Pause,
@@ -103,6 +102,7 @@ import {
   useWorkspace,
   type Workspace as RepositoryWorkspace,
 } from "@/hooks/use-workspace";
+import { AgentLogo } from "@/components/agent-logo";
 import { FileExplorer } from "@/components/file-explorer";
 import { RepositoryEditor } from "@/components/repository-editor";
 import { useRunner, type Runner } from "@/hooks/use-runner";
@@ -238,6 +238,7 @@ function SessionSidebar({
                         .replace(/\.git$/, "")}
                     </strong>
                     <span>
+                      <AgentLogo agent={run.agent} className="session-agent-logo" />
                       {agentNames[run.agent]}
                       <span className="entry-separator" />
                       {stateNames[run.state]}
@@ -745,6 +746,7 @@ function AgentChat({
         <div className="flex items-center gap-2">
           {runner.selected ? (
             <Badge variant="secondary">
+              <AgentLogo agent={runner.selected.agent} data-icon="inline-start" />
               {agentNames[runner.selected.agent]}
             </Badge>
           ) : null}
@@ -808,11 +810,7 @@ function AgentChat({
               <article className="chat-assistant">
                 <div className="assistant-label">
                   <span className="agent-mark">
-                    {runner.selected?.agent === "opencode" ? (
-                      <Code2 aria-hidden="true" />
-                    ) : (
-                      <Bot aria-hidden="true" />
-                    )}
+                    <AgentLogo agent={runner.selected?.agent || "pi"} />
                   </span>
                   <strong>{agentNames[runner.selected?.agent || "pi"]}</strong>
                   {index === turns.length - 1 && active ? (

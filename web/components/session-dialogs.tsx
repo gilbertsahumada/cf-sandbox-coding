@@ -1,3 +1,4 @@
+import { AgentLogo } from "./agent-logo";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
@@ -8,8 +9,6 @@ import {
   Unplug,
   Search,
   GitBranch,
-  Bot,
-  Code2,
   FolderGit2,
   CircleAlert,
   ChevronsDown,
@@ -227,11 +226,11 @@ export function NewSessionDialog({
                 spacing={2}
               >
                 <ToggleGroupItem value="pi" aria-label="Pi">
-                  <Bot data-icon="inline-start" />
+                  <AgentLogo agent="pi" data-icon="inline-start" />
                   Pi
                 </ToggleGroupItem>
                 <ToggleGroupItem value="opencode" aria-label="OpenCode">
-                  <Code2 data-icon="inline-start" />
+                  <AgentLogo agent="opencode" data-icon="inline-start" />
                   OpenCode
                 </ToggleGroupItem>
               </ToggleGroup>
