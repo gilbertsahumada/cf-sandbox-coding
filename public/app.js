@@ -173,11 +173,13 @@ $('example').addEventListener('click', () => { if (![...$('repository').options]
 
 let repositories = [];
 let repositoryPage = 1;
+let repositoryTotal = 0;
+let repositoryHasMore = false;
 let githubGeneration = 0;
 let repositorySelectionWrite = Promise.resolve();
 function githubError(message) { $('github-error').textContent = message; $('github-error').hidden = !message; }
 function clearGitHub() {
-  githubGeneration++; repositories = []; $('github-status').textContent = 'Sin conectar';
+  githubGeneration++; repositories = []; repositoryTotal = 0; repositoryHasMore = false; $('github-status').textContent = 'Sin conectar';
   $('github-description').textContent = 'Elige repositorios públicos y privados de tu cuenta.';
   $('github-connect').hidden = false; $('github-actions').hidden = true;
   $('repository').replaceChildren(new Option('Conecta GitHub para elegir', ''));
@@ -192,7 +194,9 @@ function renderRepositories() {
   for (const repo of matches.sort((a, b) => a.fullName.localeCompare(b.fullName))) $('repository').append(new Option(`${repo.private ? 'Privado' : 'Público'} · ${repo.fullName}`, repo.url));
   if (matches.some(repo => repo.url === selectedUrl)) $('repository').value = selectedUrl;
   $('repository').disabled = matches.length === 0;
-  $('repository-hint').textContent = `${matches.length} repositorio${matches.length === 1 ? '' : 's'} disponible${matches.length === 1 ? '' : 's'}. El agente trabajará con Qwen.`;
+  $('repository-hint').textContent = query
+    ? `${matches.length} coincidencia${matches.length === 1 ? '' : 's'} entre ${repositories.length} de ${repositoryTotal} repositorios cargados.${repositoryHasMore ? ' Carga más para ampliar la búsqueda.' : ''}`
+    : `Mostrando ${repositories.length} de ${repositoryTotal} repositorios. El agente trabajará con Qwen.`;
 }
 async function loadRepositories(append = false, ticket = githubGeneration) {
   $('github-load-more').disabled = true;
@@ -209,7 +213,9 @@ async function loadRepositories(append = false, ticket = githubGeneration) {
     repositoryPage = page;
     const items = append ? [...repositories, ...data.repositories] : [...(remembered?.repository ? [remembered.repository] : []), ...data.repositories];
     repositories = [...new Map(items.map(repo => [repo.url, repo])).values()];
-    $('repository-search').disabled = false; $('github-load-more').hidden = !data.hasMore;
+    repositoryTotal = Math.max(Number.isSafeInteger(data.total) ? data.total : 0, repositories.length);
+    repositoryHasMore = Boolean(data.hasMore);
+    $('repository-search').disabled = false; $('github-load-more').hidden = !repositoryHasMore;
     renderRepositories();
     if (!append && remembered?.repository) {
       $('repository').value = remembered.repository.url;
