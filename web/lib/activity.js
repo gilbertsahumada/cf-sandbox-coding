@@ -3,7 +3,7 @@ export function createActivity(target, run, count, follow) {
   target.replaceChildren();
   const title = document.createElement('div'); title.className = 'log-line system'; title.textContent = `${run.agent === 'pi' ? 'Pi' : 'OpenCode'} · ${run.id}`; target.append(title);
   const waiting = document.createElement('div'); waiting.className = 'log-line system'; waiting.textContent = run.state === 'cloning' ? 'Preparing the workspace and cloning the repository…' : 'Waiting for the first agent output…'; target.append(waiting);
-  let buffered = '', total = 0, assistant = null, stderr = null, dirty = false;
+  let buffered = '', total = 0, stderr = null, dirty = false;
   const nodes = new Map();
   const add = (text, kind = '', key) => {
     waiting.remove();
@@ -30,19 +30,8 @@ export function createActivity(target, run, count, follow) {
     if (event.type === 'tool_execution_start') add(`${event.toolName || 'tool'}  ${JSON.stringify(event.args || {})}`, 'tool', `${toolKey}:start`);
     else if (event.type === 'tool_execution_update') add(textBlocks(event.partialResult?.content) || 'Running…', '', toolKey);
     else if (event.type === 'tool_execution_end') { add(textBlocks(event.result?.content) || (event.isError ? 'Tool failed.' : 'Tool completed.'), event.isError ? 'error' : '', toolKey); dirty = true; }
-    else if (event.type === 'message_start' && event.message?.role === 'assistant') assistant = null;
-    else if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') {
-      if (!assistant || assistant.parentNode !== target) assistant = add('', 'result');
-      assistant.textContent = (assistant.textContent + (event.assistantMessageEvent.delta || '')).slice(-64000);
-    } else if (event.type === 'message_end' && event.message?.role === 'assistant') {
-      const text = textBlocks(event.message.content);
-      if (text) { if (assistant?.parentNode === target) assistant.textContent = text.slice(-64000); else assistant = add(text, 'result'); }
-      if (event.message.errorMessage) add(event.message.errorMessage, 'error');
-    } else if (event.type === 'message_text') {
-      assistant = add(event.part?.text || '', 'result', `message:${event.part?.id}`);
-    } else if (event.type === 'text') {
-      if (assistant?.parentNode === target) assistant.textContent = (event.part?.text || '').slice(-64000); else assistant = add(event.part?.text || '', 'result');
-    } else if (event.type === 'error') add(event.error?.data?.message || event.error?.name || 'Agent error', 'error');
+    else if (event.type === 'message_end' && event.message?.errorMessage) add(event.message.errorMessage, 'error');
+    else if (event.type === 'error') add(event.error?.data?.message || event.error?.name || 'Agent error', 'error');
     // Other agent events can contain internal model state; only render explicit activity.
   };
   count.textContent = '0';

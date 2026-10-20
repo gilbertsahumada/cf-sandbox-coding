@@ -26,3 +26,8 @@ Tarea de mejora sugerida:
 - Limpiar resultados antiguos de forma configurable.
 
 No actives un bucle de ejecución continua sin definir primero una tarea, un presupuesto y una condición de parada.
+
+
+## Manual edits in a cloud session
+
+Use Files to inspect the cloned repository and Code to edit existing text files. Save after the agent stops, then send your next instruction in the same task. The runner updates its cumulative diff and recovery checkpoint and tells the native agent which files you edited. Review Changes before using Create PR. A conflict preserves the local draft; reload only after deciding to discard it. Unsaved browser drafts are not durable, and sessions with no current recovery checkpoint cannot restore their files after the container expires.
