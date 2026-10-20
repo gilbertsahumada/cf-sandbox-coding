@@ -1,0 +1,69 @@
+# Compact session workspace design QA
+
+final result: passed
+
+## Visual targets and evidence
+
+The selected direction is the compact, rounded revision of original design 3. The human's subsequent overrides require smaller typography, tighter spacing, and no colored side borders. The reference's illustrative tasks, human-input choices, concurrency and verification claims are not backend capabilities to simulate in production.
+
+Reference images (local design assets):
+- Session: `/Users/gilbertsahumada/.codex/generated_images/01a156eb-f776-7131-8097-f5cb04c69db9/exec-01c62005-02f6-4510-9985-a594f08d3802.png`
+- New session: `/Users/gilbertsahumada/.codex/generated_images/01a156eb-f776-7131-8097-f5cb04c69db9/exec-6c0e0595-c32d-4f4a-a573-8d20f78cdab7.png`
+- History: `/Users/gilbertsahumada/.codex/generated_images/01a156eb-f776-7131-8097-f5cb04c69db9/exec-1d279fe8-03b2-45dd-89b6-8b36664df895.png`
+
+Browser-rendered implementation evidence, ignored by Git under `verification/`:
+- `verification/compact-agent-session.png`
+- `verification/compact-new-session.png`
+- `verification/compact-session-history.png`
+- `verification/compact-session-detail.png` (focused conversation crop)
+- `verification/compact-session-mobile.png`
+- `verification/compact-session-preparing.png`
+
+Desktop references are 1487×1058 raster images generated for a 1440×1024 desktop frame. Final desktop captures use a 1440×1024 CSS viewport and device scale factor 1. Compare reference and implementation at the common desktop aspect ratio, with reference image scaled proportionally. Earlier exploratory captures at other browser zoom levels were replaced. The phone capture uses 390×844 CSS pixels. The focused implementation crop covers x286/y170, 882×440 CSS pixels.
+
+Reference/implementation pairs were opened together in the same comparison input for all three screens. The session reference was also compared alongside the focused conversation capture. Content differs intentionally: the implementation renders the existing simulated API transcript and browser history instead of inserting the reference's invented events or approvals.
+
+## Comparison history and fixes
+
+1. Initial responsive inspection found that resizing a desktop session to mobile could leave both navigation and details mounted visibly over the conversation (P1). Added breakpoint state resets and exclusive compact panel visibility. Review, conversation and navigation actions now close contextual details. Post-fix phone inspection verified Conversation → Details → Review → Conversation, with no horizontal document overflow and the composer reachable. Evidence: `compact-session-mobile.png`.
+2. Historical private sessions initially shared the same redacted fallback title (P2), making them difficult to distinguish. Unknown titles now use agent plus a short task-ID suffix. Loaded instruction-derived titles remain in memory only. Post-fix history capture shows distinct safe labels. Evidence: `compact-session-history.png`.
+3. Selection and assistant messages were checked against the requested neutral treatment. Computed selection shadow is `none`; left/right selection border colors match; assistant message left border is `0px`. No colored side stripe remains.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing IBM Plex Sans/Mono preserved. Conversation is 12px with 1.7 line height; primary heading 17px; supporting navigation/details labels 10–11px. Smaller than the generated reference by explicit request. Code remains monospaced and highlighted. Long task titles truncate without widening the layout; full task text remains in the conversation.
+- Spacing and layout: 42px rail, 228px navigation, flexible conversation, 256px contextual details at the standard desktop breakpoint. Eight-pixel gutters and 14px panel radii. Compact form options share one row; redundant setup summary is removed. History rows are 60px. Phone uses one panel at a time. No persistent source editor or terminal in the default session view.
+- Colors and tokens: existing dark surfaces and muted text retained, neutral selection surfaces and whole outlines. Orange Cloudflare logo preserved. Code/diff colors retain their existing meaning. Reference colored selection edges intentionally omitted.
+- Image quality/assets: existing local official Pi/OpenCode/Cloudflare assets are reused, alongside the configured Lucide icons. No generated logos, fake brand approximations or external images were added.
+- Copy/content: all interface text remains English. Actual task states drive groups; a finished turn is Awaiting reply rather than an invented approval or passing-check badge. History explicitly describes its browser-local 12-session scope and last-known status. Checkpoint recovery is confirmed from the API, never inferred from task completion. Existing one-active-task execution limit remains.
+
+## Browser interactions verified
+
+All actions below used local simulated APIs, not real Cloudflare/GitHub/model execution:
+- Pi/OpenCode radio selection, repository menu, catalog pagination, new-session task input and launch.
+- Delayed repository preparation closes the form into the session and shows phase feedback; Stop remains disabled until startup settles.
+- Chat continuation followed immediately by Stop reaches Stopped and preserves the conversation and changes.
+- Reply drafts survive Conversation/Tools/Changes/History navigation.
+- Repository file opening, editing and Save update the same fixture session's cumulative diff.
+- History search filters by known task text, and selected sessions reopen.
+- Details can be hidden/reopened; compact Details → Review returns control to the review surface.
+- Signing out unmounts the task form and clears private session labels and drafts.
+- Browser console inspection on the final preview returned no warnings or errors.
+
+## Findings
+
+No actionable P0/P1/P2 visual or navigation findings remain after the fixes above. This is a production-UI change verified with simulated data; it does not establish a deployed integration result.
+
+## Follow-up polish and limits
+
+- Structured per-tool activity embedded in assistant turns requires extending the existing event presentation model; the current actual tool stream stays reachable via Tools and a compact conversation activity action.
+- Background concurrent execution, account-wide session discovery, durable friendly titles and explicit structured agent questions remain separate backend work.
+- Small supporting labels intentionally follow the requested density; browser zoom remains available.
+
+## Implementation checklist
+
+- [x] Session-centered desktop shell, inline creation form and history.
+- [x] Compact rounded neutral styling and smaller typography.
+- [x] Existing editor, SSE, publication and authentication behavior retained.
+- [x] Desktop/mobile browser interactions checked.
+- [x] Type checks, automated suite and production build passed.

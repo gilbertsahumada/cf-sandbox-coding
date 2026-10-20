@@ -152,6 +152,15 @@ export function useRunner() {
     [],
   );
   const activate = useCallback((id: string) => {
+    if (selectedRef.current !== id) {
+      // Do not render the previous task's transcript or proposal under a new ID.
+      setConversation(null);
+      setLiveText(null);
+      setDiff("");
+      setProposal(null);
+      setLoadingTask(true);
+      setLoadingDiff(true);
+    }
     setSelectedId(id);
     setRevision((value) => value + 1);
     setNotice("");
