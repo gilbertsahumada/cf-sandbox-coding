@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
+const slow = process.argv.includes("--slow");
 let authenticated = true,
   github = true,
   pageLoads = [],
@@ -21,7 +22,7 @@ index 1234567..2345678 100644
 -import { LegacyLayout } from './layout'
 +import { CloudWorkspace } from './workspace'
 +import { AgentChat } from './chat'
-${' '}
+${" "}
  export default function App() {
 -  return <LegacyLayout />
 +  return (
@@ -92,6 +93,8 @@ function finish(task) {
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost"),
     path = url.pathname;
+  if (slow && /^\/(session|github|sandboxes)(\/|$)/.test(path))
+    await new Promise((resolve) => setTimeout(resolve, 600));
   const json = (value, status = 200) => {
     res.writeHead(status, {
       "content-type": "application/json",
@@ -180,7 +183,7 @@ createServer(async (req, res) => {
         state: "running",
         startedAt: Date.now(),
       });
-      task.timer = setTimeout(() => finish(task), 1300);
+      task.timer = setTimeout(() => finish(task), slow ? 8000 : 1300);
       return json({ state: "started" }, 202);
     }
     if (resource === "task" && req.method === "DELETE") {
@@ -209,7 +212,7 @@ createServer(async (req, res) => {
           state: "running",
           startedAt: Date.now(),
         });
-        task.timer = setTimeout(() => finish(task), 1600);
+        task.timer = setTimeout(() => finish(task), slow ? 8000 : 1600);
       }
       return json({ turn: task.turns.length }, 202);
     }

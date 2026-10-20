@@ -3,11 +3,24 @@ import {
   ArrowUpRight,
   Cloud,
   GitFork as Github,
-  LoaderCircle,
   LockKeyhole,
   Play,
   Unplug,
+  Search,
+  GitBranch,
+  Bot,
+  Code2,
+  FolderGit2,
+  CircleAlert,
+  ChevronsDown,
+  GitPullRequest,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,9 +52,43 @@ const errorText = (error: unknown) =>
 function FormError({ error }: { error: string }) {
   return error ? (
     <Alert variant="destructive">
+      <CircleAlert aria-hidden="true" />
       <AlertDescription>{error}</AlertDescription>
     </Alert>
   ) : null;
+}
+function GitHubConnectButton({ runner }: { runner: Runner }) {
+  const [pending, setPending] = useState(false);
+  async function connect() {
+    setPending(true);
+    try {
+      await runner.connectGitHub();
+    } catch (error) {
+      runner.report(error);
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={pending}
+      aria-busy={pending}
+      onClick={() => void connect()}
+    >
+      {pending ? (
+        <Spinner data-icon="inline-start" aria-hidden="true" />
+      ) : (
+        <Github data-icon="inline-start" />
+      )}
+      {pending
+        ? "Abriendo GitHub…"
+        : runner.github?.connected
+          ? "Elegir repositorios"
+          : "Conectar GitHub"}
+    </Button>
+  );
 }
 export function AuthDialog({ runner }: { runner: Runner }) {
   const [token, setToken] = useState(""),
@@ -97,16 +144,13 @@ export function AuthDialog({ runner }: { runner: Runner }) {
               </FieldDescription>
             </Field>
             <FormError error={error} />
-            <Button disabled={pending} type="submit">
+            <Button disabled={pending} aria-busy={pending} type="submit">
               {pending ? (
-                <LoaderCircle
-                  data-icon="inline-start"
-                  className="animate-spin"
-                />
+                <Spinner data-icon="inline-start" aria-hidden="true" />
               ) : (
                 <LockKeyhole data-icon="inline-start" />
               )}
-              Conectar
+              {pending ? "Conectando…" : "Conectar"}
             </Button>
           </FieldGroup>
         </form>
@@ -157,7 +201,10 @@ export function NewSessionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Nueva sesión en la nube</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Cloud aria-hidden="true" />
+            Nueva sesión en la nube
+          </DialogTitle>
           <DialogDescription>
             Elige un repositorio y una tarea. Podrás conversar con el agente y
             revisar sus cambios aquí.
@@ -178,10 +225,12 @@ export function NewSessionDialog({
                 spacing={2}
               >
                 <ToggleGroupItem value="pi" aria-label="Pi">
-                  π Pi
+                  <Bot data-icon="inline-start" />
+                  Pi
                 </ToggleGroupItem>
                 <ToggleGroupItem value="opencode" aria-label="OpenCode">
-                  &gt;_ OpenCode
+                  <Code2 data-icon="inline-start" />
+                  OpenCode
                 </ToggleGroupItem>
               </ToggleGroup>
             </Field>
@@ -191,15 +240,7 @@ export function NewSessionDialog({
                 <AlertDescription>
                   Conecta GitHub para elegir tus repositorios públicos y
                   privados.
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void runner.connectGitHub().catch(runner.report)
-                    }
-                  >
-                    Conectar GitHub
-                  </Button>
+                  <GitHubConnectButton runner={runner} />
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -209,16 +250,24 @@ export function NewSessionDialog({
                   <FieldLabel htmlFor="repo-search">
                     Buscar repositorios
                   </FieldLabel>
-                  <Input
-                    id="repo-search"
-                    type="search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Buscar entre los repositorios cargados"
-                  />
+                  <InputGroup>
+                    <InputGroupInput
+                      id="repo-search"
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Buscar entre los repositorios cargados"
+                    />
+                    <InputGroupAddon>
+                      <Search aria-hidden="true" />
+                    </InputGroupAddon>
+                  </InputGroup>
                 </Field>
                 <Field data-disabled={runner.catalogBusy && !options.length}>
-                  <FieldLabel htmlFor="repo-select">Repositorio</FieldLabel>
+                  <FieldLabel htmlFor="repo-select">
+                    <FolderGit2 aria-hidden="true" />
+                    Repositorio
+                  </FieldLabel>
                   <NativeSelect
                     id="repo-select"
                     className="w-full"
@@ -258,6 +307,15 @@ export function NewSessionDialog({
                     ) : null}
                   </NativeSelect>
                   <FieldDescription>
+                    {runner.catalogBusy ? (
+                      <span
+                        className="inline-flex items-center gap-2"
+                        role="status"
+                      >
+                        <Spinner aria-hidden="true" />
+                        Cargando repositorios…{" "}
+                      </span>
+                    ) : null}
                     Mostrando {runner.repositories.length} de{" "}
                     {Math.max(
                       runner.repositoryTotal,
@@ -275,6 +333,11 @@ export function NewSessionDialog({
                       disabled={runner.catalogBusy}
                       onClick={() => void runner.loadMore()}
                     >
+                      {runner.catalogBusy ? (
+                        <Spinner data-icon="inline-start" aria-hidden="true" />
+                      ) : (
+                        <ChevronsDown data-icon="inline-start" />
+                      )}
                       {runner.catalogBusy
                         ? "Cargando…"
                         : "Cargar más repositorios"}
@@ -293,6 +356,7 @@ export function NewSessionDialog({
             ) : null}
             <Field>
               <FieldLabel htmlFor="repo-ref">
+                <GitBranch aria-hidden="true" />
                 Rama o etiqueta{" "}
                 <span className="text-muted-foreground">opcional</span>
               </FieldLabel>
@@ -353,10 +417,7 @@ export function NewSessionDialog({
                 }
               >
                 {runner.busy ? (
-                  <LoaderCircle
-                    data-icon="inline-start"
-                    className="animate-spin"
-                  />
+                  <Spinner data-icon="inline-start" aria-hidden="true" />
                 ) : (
                   <Play data-icon="inline-start" />
                 )}
@@ -423,17 +484,15 @@ export function SettingsDialog({
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void runner.connectGitHub().catch(runner.report)}
-            >
-              {runner.github?.connected ? "Elegir repositorios" : "Conectar"}
-            </Button>
+            <GitHubConnectButton runner={runner} />
           </div>
           {runner.github?.connected ? (
             <Button variant="ghost" disabled={pending} onClick={disconnect}>
-              <Unplug data-icon="inline-start" />
+              {pending ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <Unplug data-icon="inline-start" />
+              )}
               Desconectar GitHub
             </Button>
           ) : null}
@@ -498,7 +557,10 @@ export function PublishDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Crear pull request</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <GitPullRequest aria-hidden="true" />
+            Crear pull request
+          </DialogTitle>
           <DialogDescription>
             Publica los cambios revisados en una rama propia y un PR en
             borrador.
@@ -561,10 +623,7 @@ export function PublishDialog({
             </div>
             <Button type="submit" disabled={pending}>
               {pending ? (
-                <LoaderCircle
-                  data-icon="inline-start"
-                  className="animate-spin"
-                />
+                <Spinner data-icon="inline-start" aria-hidden="true" />
               ) : (
                 <Github data-icon="inline-start" />
               )}

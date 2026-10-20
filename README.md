@@ -19,7 +19,7 @@ Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **
 3. Describe la tarea y pulsa **Iniciar sesión de trabajo**.
 4. Responde en el panel **Agente** para continuar con el mismo agente, contexto y repositorio. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
 
-El workspace usa React, Vite y componentes shadcn/ui (Radix Nova). A la izquierda están las sesiones recientes y los archivos modificados; el centro muestra el diff por archivo con números de línea; a la derecha está el chat. Los paneles se pueden redimensionar y la actividad de herramientas se puede plegar. En móvil se alternan Sesiones, Cambios y Chat. El código se revisa en **solo lectura**: esta versión muestra los archivos del patch, no incluye edición manual ni explorador completo del repositorio.
+El workspace usa React, Vite y componentes shadcn/ui (Radix Nova). A la izquierda están las sesiones recientes y los archivos modificados; el centro muestra el diff por archivo con números de línea; a la derecha está el chat. Los paneles se pueden redimensionar y la actividad de herramientas se puede plegar. En móvil se alternan Sesiones, Cambios y Chat. Los estados de sesión usan iconos distintos y spinners mientras trabajan; el buscador y el chat usan Input Group, y los atajos usan Kbd. La recuperación de archivos y conversación muestra Skeletons mientras espera datos. La actividad usa Collapsible y mantiene los logs montados al plegarla. El código se revisa en **solo lectura**: esta versión muestra los archivos del patch, no incluye edición manual ni explorador completo del repositorio.
 
 Desarrollo de la interfaz:
 
@@ -27,6 +27,8 @@ Desarrollo de la interfaz:
 npm run dev           # Compila la interfaz y abre el Worker local.
 npm run dev:ui        # Vite con recarga; requiere el Worker local en :8787.
 npm run preview:editor # Interfaz con datos simulados en :8795, sin claves ni red externa.
+# Para comprobar loaders y estados intermedios:
+npm run preview:editor -- --slow
 ```
 
 El build escribe los recursos en `dist/ui`; `npm run deploy` lo ejecuta antes de Wrangler. En desarrollo con Wrangler, vuelve a compilar la UI después de editarla; Vite ofrece recarga inmediata en un segundo proceso. Las fuentes IBM Plex se sirven desde el mismo origen y la CSP mantiene bloqueados los scripts y estilos inline. La previsualización simulada usa `fixture-runner-token` únicamente si pruebas cerrar y abrir su sesión local; nunca introduces claves reales allí.
@@ -238,4 +240,4 @@ Verificado con ambos CLI reales y un proveedor simulado: dos turnos, recuerdo de
 
 ## Verificación del nuevo workspace
 
-La migración a React y shadcn conserva la API del runner. Sus pruebas de navegador usan `scripts/preview-editor.mjs`, con respuestas y SSE simulados: restaurar una tarea por enlace, continuar el chat y recuperar sus turnos al recargar, crear una sesión OpenCode, detenerla, recordar el repositorio, paginar el catálogo, revisar archivos y reintentar un PR después de un error. Esta verificación no ejecuta agentes reales ni publica propuestas en GitHub. Las pruebas automáticas cubren los paths y números de línea del diff, eventos de texto del asistente, enlaces de PR y los recursos estáticos bajo la CSP.
+La migración a React y shadcn conserva la API del runner. Sus pruebas de navegador usan `scripts/preview-editor.mjs`, con respuestas y SSE simulados: restaurar una tarea por enlace, continuar el chat y recuperar sus turnos al recargar, crear una sesión OpenCode, detenerla, recordar el repositorio, paginar el catálogo, revisar archivos y reintentar un PR después de un error. También se verificaron los estados de envío con latencia simulada, la navegación compacta Chat/Cambios y la reapertura de los logs. Esta verificación no ejecuta agentes reales ni publica propuestas en GitHub. Las pruebas automáticas cubren los paths y números de línea del diff, eventos de texto del asistente, enlaces de PR y los recursos estáticos bajo la CSP.

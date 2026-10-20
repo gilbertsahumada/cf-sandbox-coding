@@ -342,18 +342,6 @@ a {
   flex-direction: column;
   gap: 12px;
 }
-.session-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.session-search > svg {
-  color: var(--muted-foreground);
-  flex-shrink: 0;
-}
-.session-search input {
-  min-width: 0;
-}
 .section-heading {
   display: flex;
   align-items: center;
@@ -653,16 +641,7 @@ a {
   color: var(--muted-foreground);
   font-size: 10px;
 }
-kbd {
-  display: inline-block;
-  font-family: var(--font-sans);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  font-size: 9px;
-  padding: 1px 4px;
-  line-height: 1.6;
-  color: var(--muted-foreground);
-}
+
 .workspace-shortcuts > span {
   margin-left: 5px;
 }
@@ -1007,4 +986,59 @@ kbd {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Keep asynchronous feedback legible in the compact editor layout. */
+.stream-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.stream-label > svg,
+.composer-context > svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.diff-loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  padding: 26px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.chat-input-group .composer-actions {
+  padding: 6px 8px 8px;
+}
+.composer-actions [data-slot="kbd"] {
+  white-space: nowrap;
+}
+.message-label {
+  gap: 5px;
+}
+[data-slot="dialog-title"] > svg,
+[data-slot="field-label"] > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.activity-scroll[hidden] {
+  display: none;
+}
+.statusbar [data-slot="badge"] {
+  height: 19px;
+}
+
+.message-label {
+  justify-content: flex-start;
+}
+.message-label span {
+  margin-left: auto;
+}
+
+.agent-mark > svg {
+  width: 13px;
+  height: 13px;
 }

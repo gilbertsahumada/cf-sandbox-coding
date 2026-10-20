@@ -52,7 +52,8 @@ export function useRunner() {
   const [diff, setDiff] = useState(""),
     [proposal, setProposal] = useState<Proposal | null>(null),
     [streamState, setStreamState] = useState(""),
-    [loadingTask, setLoadingTask] = useState(false);
+    [loadingTask, setLoadingTask] = useState(false),
+    [loadingDiff, setLoadingDiff] = useState(false);
   const [revision, setRevision] = useState(0),
     [activityCount, setActivityCount] = useState(0);
   const activityRef = useRef<HTMLDivElement>(null),
@@ -315,6 +316,7 @@ export function useRunner() {
     setLiveText(null);
     setStreamState("");
     setLoadingTask(false);
+    setLoadingDiff(false);
     activityRef.current?.replaceChildren();
     setActivityCount(0);
     if (!connected || !selectedId) return;
@@ -329,6 +331,7 @@ export function useRunner() {
       authCheckedAt = 0;
     const controller = new AbortController();
     setLoadingTask(true);
+    setLoadingDiff(true);
     setStreamState("Conectando");
     const transcript = assistantStream(setLiveText);
     const activity = () =>
@@ -391,6 +394,7 @@ export function useRunner() {
           } catch (error) {
             if (current && terminal) report(error);
           } finally {
+            if (current) setLoadingDiff(false);
             busyDiff = false;
             if (again && current) {
               again = false;
@@ -405,6 +409,7 @@ export function useRunner() {
       const info = await freshConversation();
       if (!current) return;
       setLoadingTask(false);
+      queueDiff(true);
       source = new EventSource(`/sandboxes/${run.id}/events?turn=${info.turn}`);
       source.onopen = () => {
         if (current) setStreamState("En vivo");
@@ -515,6 +520,7 @@ export function useRunner() {
     void begin().catch((error) => {
       if (current) {
         setLoadingTask(false);
+        setLoadingDiff(false);
         report(error);
       }
     });
@@ -685,6 +691,7 @@ export function useRunner() {
     proposal,
     streamState,
     loadingTask,
+    loadingDiff,
     activityRef,
     activityCount,
     followRef,

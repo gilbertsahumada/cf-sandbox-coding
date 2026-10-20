@@ -15,15 +15,24 @@ import {
   CircleHelp,
   Cloud,
   CloudCheck,
+  Eye,
+  FolderGit2,
+  LogIn,
+  LogOut,
+  UserRound,
+  Cpu,
+  Bot,
+  Radio,
+  ChevronsDown,
+  Pause,
+  Check,
   Code2,
   Download,
-  FileCode2,
   FileDiff,
   Files,
   GitBranch,
   GitPullRequest,
   GitFork as Github,
-  LoaderCircle,
   MessageSquare,
   PanelBottom,
   PanelLeftClose,
@@ -35,6 +44,15 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupTextarea,
+  InputGroupButton,
+  InputGroupText,
+} from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -59,8 +77,17 @@ import {
 } from "@/components/ui/empty";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import {
+  FileIcon,
+  TaskStateIcon,
+  TaskBadge,
+} from "@/components/workspace-indicators";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -132,7 +159,10 @@ function SessionSidebar({
   return (
     <aside className="session-sidebar" aria-label="Sesiones y archivos">
       <div className="panel-heading">
-        <h2>Explorador</h2>
+        <h2>
+          <FolderGit2 className="size-3.5" aria-hidden="true" />
+          Explorador
+        </h2>
         <IconButton
           icon={PanelLeftClose}
           label="Ocultar sesiones"
@@ -144,15 +174,17 @@ function SessionSidebar({
           <Plus data-icon="inline-start" />
           Nueva sesión
         </Button>
-        <label className="session-search">
-          <Search aria-hidden="true" className="size-3.5" />
-          <Input
+        <InputGroup>
+          <InputGroupInput
             aria-label="Buscar sesiones"
             placeholder="Buscar sesiones…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        </label>
+          <InputGroupAddon>
+            <Search aria-hidden="true" />
+          </InputGroupAddon>
+        </InputGroup>
       </div>
       <div className="section-heading">
         <ChevronDown className="size-3.5" />
@@ -169,13 +201,7 @@ function SessionSidebar({
               onClick={() => runner.activate(run.id)}
               aria-current={runner.selected?.id === run.id ? "page" : undefined}
             >
-              <span
-                className={cn(
-                  "session-indicator",
-                  isActive(run.state) && "is-working",
-                )}
-                aria-hidden="true"
-              />
+              <TaskStateIcon state={run.state} data-icon="inline-start" />
               <span className="session-entry-copy">
                 <strong className="truncate">
                   {run.repository
@@ -214,14 +240,27 @@ function SessionSidebar({
             onClick={() => openFile(file.path)}
             title={file.path}
           >
-            <FileCode2 data-icon="inline-start" />
+            <FileIcon path={file.path} data-icon="inline-start" />
             <span className="truncate">{file.path}</span>
             <span className={cn("file-status", `status-${file.status}`)}>
               {file.status}
             </span>
           </Button>
         ))}
-        {!files.length ? (
+        {!files.length &&
+        (runner.loadingDiff ||
+          runner.loadingTask ||
+          (runner.checking && Boolean(runner.selected))) ? (
+          <div
+            className="flex flex-col gap-2 px-3"
+            aria-label="Cargando archivos"
+            aria-busy="true"
+          >
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-7 w-4/5" />
+            <Skeleton className="h-7 w-3/5" />
+          </div>
+        ) : !files.length ? (
           <p className="sidebar-empty">
             Los archivos aparecerán cuando el agente haga cambios.
           </p>
@@ -287,46 +326,70 @@ function ActivityPanel({
 }) {
   const [follow, setFollow] = useState(true);
   return (
-    <section
-      className={cn("activity-panel", !expanded && "collapsed")}
-      aria-label="Actividad de herramientas"
-    >
-      <div className="panel-heading">
-        <span className="activity-heading">
-          <SquareTerminal className="size-3.5" />
-          Actividad<Badge variant="secondary">{runner.activityCount}</Badge>
-        </span>
-        <div className="flex items-center gap-1">
-          <span className="stream-label" role="status">
-            {runner.streamState || "Sin ejecución"}
+    <Collapsible open={expanded} onOpenChange={toggle} asChild>
+      <section
+        className={cn("activity-panel", !expanded && "collapsed")}
+        aria-label="Actividad de herramientas"
+      >
+        <div className="panel-heading">
+          <span className="activity-heading">
+            <SquareTerminal className="size-3.5" />
+            Actividad<Badge variant="secondary">{runner.activityCount}</Badge>
           </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            aria-pressed={follow}
-            onClick={() => {
-              setFollow((value) => !value);
-              runner.followRef.current = !follow;
-            }}
-          >
-            {follow ? "Siguiendo" : "Pausado"}
-          </Button>
-          <IconButton
-            icon={expanded ? ChevronDown : PanelBottom}
-            label={expanded ? "Ocultar actividad" : "Mostrar actividad"}
-            onClick={toggle}
-          />
+          <div className="flex items-center gap-1">
+            <span className="stream-label" role="status">
+              {["Conectando", "Reconectando"].includes(runner.streamState) ? (
+                <Spinner aria-hidden="true" />
+              ) : runner.streamState === "Guardado" ? (
+                <Check aria-hidden="true" />
+              ) : runner.streamState === "En vivo" ? (
+                <Radio aria-hidden="true" />
+              ) : null}
+              {runner.streamState || "Sin ejecución"}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-pressed={follow}
+              onClick={() => {
+                setFollow((value) => !value);
+                runner.followRef.current = !follow;
+              }}
+            >
+              {follow ? (
+                <ChevronsDown data-icon="inline-start" />
+              ) : (
+                <Pause data-icon="inline-start" />
+              )}
+              {follow ? "Siguiendo" : "Pausado"}
+            </Button>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={
+                  expanded ? "Ocultar actividad" : "Mostrar actividad"
+                }
+              >
+                {expanded ? <ChevronDown /> : <PanelBottom />}
+              </Button>
+            </CollapsibleTrigger>
+          </div>
         </div>
-      </div>
-      <div className="activity-scroll" hidden={!expanded}>
-        <div
-          className="activity-output"
-          ref={runner.activityRef}
-          tabIndex={0}
-          aria-label="Logs de ejecución"
-        />
-      </div>
-    </section>
+        <CollapsibleContent
+          forceMount
+          className="activity-scroll"
+          hidden={!expanded}
+        >
+          <div
+            className="activity-output"
+            ref={runner.activityRef}
+            tabIndex={0}
+            aria-label="Logs de ejecución"
+          />
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 function Workspace({
@@ -381,6 +444,7 @@ function Workspace({
             variant="ghost"
             size="xs"
             disabled={!runner.diff}
+            aria-label="Descargar patch"
             onClick={download}
           >
             <Download data-icon="inline-start" />
@@ -421,8 +485,13 @@ function Workspace({
               size="xs"
               onClick={() => void runner.stop()}
               disabled={runner.stopping}
+              aria-busy={runner.stopping}
             >
-              <Square data-icon="inline-start" />
+              {runner.stopping ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <Square data-icon="inline-start" />
+              )}
               {runner.stopping ? "Deteniendo…" : "Detener"}
             </Button>
           ) : null}
@@ -442,7 +511,7 @@ function Workspace({
                   value={item.path}
                   title={item.path}
                 >
-                  <FileCode2 data-icon="inline-start" />
+                  <FileIcon path={item.path} data-icon="inline-start" />
                   {item.path.split("/").at(-1)}
                   <span className={cn("file-status", `status-${item.status}`)}>
                     {item.status}
@@ -462,13 +531,30 @@ function Workspace({
                 <div className="diff-stat">
                   <span className="diff-added">+{item.added}</span>
                   <span className="diff-removed">−{item.removed}</span>
-                  <Badge variant="outline">Solo lectura</Badge>
+                  <Badge variant="outline">
+                    <Eye data-icon="inline-start" />
+                    Solo lectura
+                  </Badge>
                 </div>
               </div>
               <DiffPane file={item} />
             </TabsContent>
           ))}
         </Tabs>
+      ) : runner.loadingDiff ||
+        runner.loadingTask ||
+        (runner.checking && Boolean(runner.selected)) ? (
+        <div className="diff-loading" aria-busy="true" role="status">
+          <div className="flex items-center gap-2">
+            <Spinner aria-hidden="true" />
+            Recuperando cambios…
+          </div>
+          <Skeleton className="h-5 w-2/5" />
+          <Skeleton className="h-5 w-4/5" />
+          <Skeleton className="h-5 w-3/5" />
+          <Skeleton className="h-5 w-4/5" />
+          <Skeleton className="h-5 w-1/2" />
+        </div>
       ) : (
         <>
           <div className="file-tabs">
@@ -502,8 +588,10 @@ function Workspace({
                   Nueva sesión
                 </Button>
                 <p className="workspace-shortcuts">
-                  <kbd>⌘ / Ctrl</kbd>
-                  <kbd>N</kbd>
+                  <KbdGroup>
+                    <Kbd>⌘ / Ctrl</Kbd>
+                    <Kbd>N</Kbd>
+                  </KbdGroup>
                   <span>Nueva sesión</span>
                 </p>
               </EmptyContent>
@@ -626,7 +714,7 @@ function AgentChat({
         tabIndex={0}
         aria-label="Mensajes de la conversación"
       >
-        {runner.loadingTask ? (
+        {runner.loadingTask || (runner.checking && runner.selected) ? (
           <div className="flex flex-col gap-4 p-4">
             <Skeleton className="h-12 w-4/5 self-end" />
             <Skeleton className="h-24 w-full" />
@@ -640,6 +728,7 @@ function AgentChat({
               {turn.number > 0 ? (
                 <article className="chat-user">
                   <div className="message-label">
+                    <UserRound className="size-3" aria-hidden="true" />
                     Tú<span>Mensaje {turn.number}</span>
                   </div>
                   <p>{turn.prompt}</p>
@@ -648,12 +737,16 @@ function AgentChat({
               <article className="chat-assistant">
                 <div className="assistant-label">
                   <span className="agent-mark">
-                    {runner.selected?.agent === "opencode" ? "›_" : "π"}
+                    {runner.selected?.agent === "opencode" ? (
+                      <Code2 aria-hidden="true" />
+                    ) : (
+                      <Bot aria-hidden="true" />
+                    )}
                   </span>
                   <strong>{agentNames[runner.selected?.agent || "pi"]}</strong>
                   {index === turns.length - 1 && active ? (
                     <span className="assistant-working">
-                      <LoaderCircle className="size-3 animate-spin" />
+                      <Spinner aria-hidden="true" />
                       Trabajando
                     </span>
                   ) : null}
@@ -700,7 +793,11 @@ function AgentChat({
       </div>
       <div className="chat-composer">
         <div className="composer-context">
-          <span className={cn("context-dot", active && "is-working")} />
+          {runner.selected ? (
+            <TaskStateIcon state={runner.selected.state} className="size-3" />
+          ) : (
+            <MessageSquare className="size-3" aria-hidden="true" />
+          )}
           <span>
             {active
               ? "El agente está trabajando"
@@ -724,65 +821,74 @@ function AgentChat({
               <FieldLabel htmlFor="chat-message" className="sr-only">
                 Responder al agente
               </FieldLabel>
-              <Textarea
-                id="chat-message"
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value);
-                  drafts.current[draftKey] = event.target.value;
-                }}
-                maxLength={32000}
-                rows={3}
-                disabled={
-                  !runner.connected ||
-                  !runner.selected ||
-                  runner.sending ||
-                  (!chat?.canContinue && !active)
-                }
-                placeholder={
-                  runner.selected
-                    ? "Responde o indica el siguiente cambio…"
-                    : "Abre una sesión para conversar…"
-                }
-                onKeyDown={(event) => {
-                  if (
-                    (event.ctrlKey || event.metaKey) &&
-                    event.key === "Enter"
-                  ) {
-                    event.preventDefault();
-                    if (!active && chat?.canContinue && !runner.sending)
-                      formRef.current?.requestSubmit();
+              <InputGroup className="chat-input-group">
+                <InputGroupTextarea
+                  id="chat-message"
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    drafts.current[draftKey] = event.target.value;
+                  }}
+                  maxLength={32000}
+                  rows={3}
+                  disabled={
+                    !runner.connected ||
+                    !runner.selected ||
+                    runner.sending ||
+                    (!chat?.canContinue && !active)
                   }
-                }}
-              />
+                  placeholder={
+                    runner.selected
+                      ? "Responde o indica el siguiente cambio…"
+                      : "Abre una sesión para conversar…"
+                  }
+                  onKeyDown={(event) => {
+                    if (
+                      (event.ctrlKey || event.metaKey) &&
+                      event.key === "Enter"
+                    ) {
+                      event.preventDefault();
+                      if (!active && chat?.canContinue && !runner.sending)
+                        formRef.current?.requestSubmit();
+                    }
+                  }}
+                />
+                <InputGroupAddon align="block-end" className="composer-actions">
+                  <InputGroupText>
+                    <Cpu aria-hidden="true" />
+                    Qwen 3.7 Flash
+                  </InputGroupText>
+                  <div className="flex items-center gap-2">
+                    <KbdGroup>
+                      <Kbd>⌘ / Ctrl</Kbd>
+                      <Kbd>↵</Kbd>
+                    </KbdGroup>
+                    <InputGroupButton
+                      variant="default"
+                      size="icon-sm"
+                      type="submit"
+                      disabled={
+                        !draft.trim() ||
+                        !chat?.canContinue ||
+                        active ||
+                        runner.sending
+                      }
+                      aria-label={
+                        runner.sending ? "Enviando mensaje" : "Enviar mensaje"
+                      }
+                      aria-busy={runner.sending}
+                    >
+                      {runner.sending ? (
+                        <Spinner aria-hidden="true" />
+                      ) : (
+                        <ArrowUp />
+                      )}
+                    </InputGroupButton>
+                  </div>
+                </InputGroupAddon>
+              </InputGroup>
             </Field>
           </FieldGroup>
-          <div className="composer-actions">
-            <span>
-              <span className="model-dot" />
-              Qwen 3.7 Flash
-            </span>
-            <div className="flex items-center gap-2">
-              <kbd>⌘ / Ctrl ↵</kbd>
-              <Button
-                size="icon-sm"
-                type="submit"
-                disabled={
-                  !draft.trim() ||
-                  !chat?.canContinue ||
-                  active ||
-                  runner.sending
-                }
-                aria-label="Enviar mensaje"
-              >
-                {runner.sending ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <ArrowUp />
-                )}
-              </Button>
-            </div>
-          </div>
         </form>
         {error ? (
           <Alert variant="destructive">
@@ -805,6 +911,17 @@ function AgentChat({
 export default function App() {
   const runner = useRunner();
   const drafts = useRef<Record<string, string>>({});
+  const [exiting, setExiting] = useState(false);
+  async function logout() {
+    setExiting(true);
+    try {
+      await runner.logout();
+    } catch (error) {
+      runner.report(error);
+    } finally {
+      setExiting(false);
+    }
+  }
   useEffect(() => {
     if (!runner.connected) drafts.current = {};
   }, [runner.connected]);
@@ -908,23 +1025,26 @@ export default function App() {
             <Button
               variant="ghost"
               size="sm"
+              disabled={runner.checking || exiting}
+              aria-busy={runner.checking || exiting}
               onClick={() =>
-                runner.connected
-                  ? void runner.logout().catch(runner.report)
-                  : runner.setAuthOpen(true)
+                runner.connected ? void logout() : runner.setAuthOpen(true)
               }
             >
-              <span
-                className={cn(
-                  "connection-dot",
-                  runner.connected && "connected",
-                )}
-              />
-              {runner.checking
-                ? "Conectando…"
-                : runner.connected
-                  ? "Conectado · salir"
-                  : "Conectar"}
+              {runner.checking || exiting ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              ) : runner.connected ? (
+                <LogOut data-icon="inline-start" />
+              ) : (
+                <LogIn data-icon="inline-start" />
+              )}
+              {exiting
+                ? "Saliendo…"
+                : runner.checking
+                  ? "Conectando…"
+                  : runner.connected
+                    ? "Conectado · salir"
+                    : "Conectar"}
             </Button>
           </div>
         </header>
@@ -1073,10 +1193,7 @@ export default function App() {
           </div>
           <div>
             {runner.selected ? (
-              <span>
-                {agentNames[runner.selected.agent]} /{" "}
-                {stateNames[runner.selected.state]}
-              </span>
+              <TaskBadge state={runner.selected.state} />
             ) : (
               <span>Entorno por sesión</span>
             )}
