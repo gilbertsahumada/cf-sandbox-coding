@@ -1461,5 +1461,4 @@ a {
   height: 10px;
   object-fit: contain;
   flex: none;
-  filter: grayscale(1) brightness(1.6);
 }
