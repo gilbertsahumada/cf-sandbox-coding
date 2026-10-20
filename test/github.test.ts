@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { appJwt, appManifest, gitReadRequest, isGitReadRequest, validState } from '../src/github-api';
 const grant = { installationId: 1, repositoryId: 42, fullName: 'owner/private-repo' };
-test('GitHub App requests only read access and no user OAuth scopes or webhooks', () => {
+test('GitHub App requests explicit proposal permissions and no user OAuth scopes or webhooks', () => {
   const manifest = appManifest('https://runner.example', 'test');
-  assert.deepEqual(manifest.default_permissions, { contents: 'read', metadata: 'read' });
+  assert.deepEqual(manifest.default_permissions, { contents: 'write', pull_requests: 'write', metadata: 'read' });
   assert.equal(manifest.public, false);
   assert.equal(manifest.hook_attributes.active, false);
   assert.equal(manifest.request_oauth_on_install, false);

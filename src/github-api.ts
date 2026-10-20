@@ -20,11 +20,11 @@ export function validState(actual: string, expected: string): boolean {
 export function appManifest(origin: string, suffix: string) {
   return {
     name: `Sandbox Coding ${suffix}`, url: origin,
-    description: 'Seleccionar repositorios y clonarlos en sandboxes de programación con acceso de lectura.',
+    description: 'Seleccionar repositorios y clonarlos en sandboxes de programación y proponer cambios mediante pull requests.',
     public: false, hook_attributes: { url: `${origin}/github/events`, active: false },
     redirect_url: `${origin}/github/manifest/callback`, setup_url: `${origin}/github/install/callback`,
     setup_on_update: true, request_oauth_on_install: false,
-    default_permissions: { contents: 'read', metadata: 'read' }, default_events: [],
+    default_permissions: { contents: 'write', pull_requests: 'write', metadata: 'read' }, default_events: [],
   };
 }
 export class GitHubApiError extends Error {

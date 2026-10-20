@@ -10,7 +10,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "task": "node scripts/run-task.mjs",
     "configure": "node scripts/configure.mjs",
-    "verify:live": "node scripts/verify-live.mjs"
+    "verify:live": "node scripts/verify-live.mjs",
+    "verify:sse": "node scripts/verify-sse.mjs"
   },
   "dependencies": {
     "@cloudflare/sandbox": "1.0.1",

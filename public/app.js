@@ -1,12 +1,16 @@
+import { createActivity } from './activity.js';
 import { historyForStorage, recoveredRun } from './run-history.js';
 const $ = id => document.getElementById(id);
 const names = { pi: 'Pi', opencode: 'OpenCode' };
-const labels = { cloning: 'Preparando', running: 'En curso', succeeded: 'Completada', failed: 'Falló', lost: 'Entorno perdido', none: 'Sin tarea' };
+const labels = { cloning: 'Preparando', running: 'En curso', stopping: 'Deteniendo', cancelled: 'Detenida', succeeded: 'Completada', failed: 'Falló', lost: 'Entorno perdido', none: 'Sin tarea' };
 let connected = false;
 let selected = null;
 let generation = 0;
 let diff = '';
 let busy = false;
+let liveCleanup = () => {};
+const stoppingTasks = new Set();
+function closeLive() { liveCleanup(); liveCleanup = () => {}; $('stream-status').hidden = true; }
 let history = [];
 try { const stored = JSON.parse(localStorage.getItem('sandbox-runs') || '[]'); history = Array.isArray(stored) ? historyForStorage(stored) : []; } catch { history = []; }
 const requestedRun = recoveredRun(new URL(window.location.href).searchParams.get('task'));
@@ -17,13 +21,14 @@ function saveHistory() { try { localStorage.setItem('sandbox-runs', JSON.stringi
 function showNotice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 function setConnected(value) {
   connected = value;
+  if (!value) { closeLive(); $('create-pr').hidden = true; $('view-pr').hidden = true; if ($('pr-dialog').open) $('pr-dialog').close(); $('pr-title').value = ''; $('pr-description').value = ''; $('view-pr').removeAttribute('href'); }
   $('connection').classList.toggle('connected', value);
   $('connection-label').textContent = value ? 'Conectado · salir' : 'Conectar';
   updateSubmit();
   if (value) refreshGitHub(); else clearGitHub();
 }
 function updateSubmit() {
-  const running = history.some(run => ['cloning', 'running'].includes(run.state));
+  const running = history.some(run => ['cloning', 'running', 'stopping'].includes(run.state));
   $('submit-task').disabled = busy || running;
   $('submit-task').querySelector('span').textContent = busy || running ? 'Tarea en curso…' : 'Ejecutar tarea';
 }
@@ -55,7 +60,7 @@ $('auth-cancel').addEventListener('click', () => { $('access-token').value = '';
 $('auth-dialog').addEventListener('close', () => { $('access-token').value = ''; });
 $('connection').addEventListener('click', async () => {
   if (!connected) return authDialog();
-  try { await api('/session', undefined, 'DELETE'); generation++; selected = null; history = history.filter(run => !run.private); saveHistory(); setConnected(false); $('result').hidden = true; $('result-text').textContent = ''; $('activity-output').replaceChildren(); $('activity-output').hidden = true; $('empty-state').hidden = false; $('progress').hidden = true; $('run-meta').hidden = true; $('workspace-title').textContent = 'Conecta para continuar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin conexión'; $('activity-count').textContent = '0'; renderDiff(''); selectTab('activity'); renderHistory(); showNotice('Sesión cerrada. Las tareas en ejecución continúan en su sandbox.'); }
+  try { await api('/session', undefined, 'DELETE'); closeLive(); generation++; selected = null; history = history.filter(run => !run.private); saveHistory(); setConnected(false); $('result').hidden = true; $('result-text').textContent = ''; $('activity-output').replaceChildren(); $('activity-output').hidden = true; $('empty-state').hidden = false; $('progress').hidden = true; $('run-meta').hidden = true; $('stop-task').hidden = true; $('workspace-title').textContent = 'Conecta para continuar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin conexión'; $('activity-count').textContent = '0'; renderDiff(''); selectTab('activity'); renderHistory(); showNotice('Sesión cerrada. Las tareas en ejecución continúan en su sandbox.'); }
   catch (error) { showNotice(error.message); }
 });
 function renderHistory() {
@@ -71,9 +76,15 @@ function renderHistory() {
   }
 }
 function state(run) {
+  if (['cloning', 'running', 'stopping', 'none'].includes(run.state)) { $('create-pr').hidden = true; $('view-pr').hidden = true; }
+  const stopping = run.state === 'stopping' || stoppingTasks.has(run.id);
+  $('stop-task').hidden = !connected || !['running', 'stopping'].includes(run.state);
+  $('stop-task').disabled = stopping;
+  $('stop-task').textContent = stopping ? 'Deteniendo…' : 'Detener tarea';
+  $('stop-task').setAttribute('aria-busy', String(stopping));
   $('task-state').className = `state ${run.state}`; $('task-state').textContent = labels[run.state] || run.state;
   for (const [index, item] of [...$('progress').children].entries()) {
-    const current = run.state === 'cloning' ? 0 : run.state === 'running' ? 1 : 2;
+    const current = run.state === 'cloning' ? 0 : ['running', 'stopping'].includes(run.state) ? 1 : 2;
     item.className = index < current ? 'complete' : index === current ? 'active' : '';
     item.querySelector('span').textContent = index < current ? '✓' : String(index + 1);
   }
@@ -85,31 +96,14 @@ function elapsed(run) {
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
 }
 setInterval(() => { if (selected) $('run-time').textContent = elapsed(selected); }, 1000);
-function addLine(container, text, kind = '') {
-  const line = document.createElement('div'); line.className = `log-line ${kind}`; line.textContent = text; container.append(line);
-}
 function activity(stdout = '', stderr = '', run = selected) {
-  const target = $('activity-output'); const previous = target.scrollTop;
-  target.replaceChildren(); $('empty-state').hidden = true; target.hidden = false;
-  addLine(target, `${names[run.agent]} · ${labels[run.state] || run.state} · ${run.id}`, 'system');
-  let count = 0;
-  for (const [index, raw] of stdout.split('\n').entries()) {
-    if (!raw.trim()) continue;
-    let event; try { event = JSON.parse(raw); } catch { if (index === 0 && !raw.startsWith('{')) { addLine(target, 'Mostrando la salida más reciente…', 'system'); continue; } addLine(target, raw); count++; continue; }
-    if (!event || typeof event !== 'object') { addLine(target, raw); count++; continue; }
-    const message = event.message;
-    if (event.type === 'tool_execution_start') { addLine(target, `${event.toolName || 'herramienta'}  ${JSON.stringify(event.args || {})}`, 'tool'); count++; }
-    else if (event.type === 'tool_execution_end') { const content = Array.isArray(event.result?.content) ? event.result.content.filter(block => block?.type === 'text').map(block => block.text).join('\n') : ''; addLine(target, content || (event.isError ? 'La herramienta falló.' : 'Herramienta completada.'), event.isError ? 'error' : ''); count++; }
-    else if (event.type === 'message_end' && message?.role === 'assistant') { const text = Array.isArray(message.content) ? message.content.filter(block => block?.type === 'text').map(block => block.text).join('\n') : ''; if (text) { addLine(target, text, 'result'); count++; } if (message.errorMessage) addLine(target, message.errorMessage, 'error'); }
-    else if (event.type === 'text') { addLine(target, event.part?.text || '', 'result'); count++; }
-    else if (event.type === 'error') { addLine(target, event.error?.data?.message || event.error?.name || 'Error del agente', 'error'); count++; }
-    else if (event.type === 'tool_use') { addLine(target, `${event.part?.tool || 'herramienta'}  ${JSON.stringify(event.part?.state?.input || {})}`, 'tool'); count++; }
-  }
-  if (stderr.trim()) { addLine(target, 'Salida del proceso', 'system'); addLine(target, stderr); }
-  if (!stdout.trim() && !stderr.trim()) addLine(target, run.state === 'cloning' ? 'Preparando el entorno y clonando el repositorio…' : 'Esperando la primera salida del agente…', 'system');
-  $('activity-count').textContent = String(count);
-  if ($('follow').checked) target.scrollTop = target.scrollHeight; else target.scrollTop = previous;
+  $('empty-state').hidden = true; $('activity-output').hidden = false;
+  const view = createActivity($('activity-output'), run, $('activity-count'), $('follow'));
+  if (stdout) view.stdout(stdout);
+  if (stderr) view.stderr(stderr);
+  return view;
 }
+
 function renderDiff(text) {
   diff = text; const target = $('diff-output'); const previous = target.scrollTop;
   target.replaceChildren(); target.hidden = !text; $('diff-empty').hidden = Boolean(text); $('download-diff').hidden = !text || $('tab-changes').getAttribute('aria-selected') !== 'true';
@@ -132,29 +126,82 @@ for (const name of ['activity', 'changes']) {
 }
 $('download-diff').addEventListener('click', () => { const url = URL.createObjectURL(new Blob([diff], { type: 'text/plain;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${selected?.id || 'changes'}.patch`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 async function selectRun(run) {
+  closeLive();
   selected = run; const ticket = ++generation;
+  $('create-pr').hidden = true; $('view-pr').hidden = true;
   const page = new URL(window.location.href); page.searchParams.set('task', run.id); window.history.replaceState(null, '', page);
   $('workspace-title').textContent = run.repository.replace('https://github.com/', ''); $('run-meta').hidden = false; $('run-agent').textContent = names[run.agent]; $('run-repository').textContent = run.ref || 'Rama predeterminada'; $('run-time').textContent = elapsed(run); $('progress').hidden = false; $('result').hidden = true;
-  showNotice(''); state(run); renderDiff(''); activity('', '', run);
+  showNotice(''); state(run); renderDiff(''); let view = activity('', '', run);
   if (!connected || run.state === 'cloning') return;
-  while (ticket === generation && connected) {
-    try {
-      const status = await (await api(`/sandboxes/${run.id}/task`)).json();
-      if (status.state === 'none') { status.state = 'lost'; status.error = 'La tarea no llegó a iniciarse. Crea una nueva para volver a intentarlo.'; }
-      const logs = await (await api(`/sandboxes/${run.id}/logs`)).json();
-      if (ticket !== generation) return;
-      if (status.state !== 'none') run.state = status.state;
-      if (!['running', 'none'].includes(status.state)) run.finishedAt ||= Date.now();
-      state(run); activity(logs.stdout, logs.stderr, run); showNotice('');
-      if (status.result || status.error) { $('result').hidden = false; $('result-text').textContent = status.result || status.error; }
-      try { const text = await (await api(`/sandboxes/${run.id}/diff`)).text(); if (ticket === generation) renderDiff(text); } catch (error) { if (['succeeded', 'failed', 'lost'].includes(run.state)) showNotice(error.message); }
-      if (!['running', 'none'].includes(status.state)) { if (status.state === 'lost') showNotice('El entorno se detuvo antes de guardar el resultado. Crea una nueva tarea para intentarlo de nuevo.'); return; }
-    } catch (error) { if (ticket !== generation) return; showNotice(error.message + (connected ? ' Volveremos a consultar automáticamente.' : '')); if (!connected) return; }
-    await new Promise(resolve => setTimeout(resolve, 3500));
-  }
+  const controller = new AbortController();
+  const stream = new EventSource(`/sandboxes/${run.id}/events`);
+  let diffTimer, diffBusy = false, diffAgain = false, terminal = false, completed = false, authCheckedAt = 0;
+  const current = () => ticket === generation && connected;
+  const updateStream = (text, live = false) => { if (!current()) return; $('stream-status').hidden = false; $('stream-status').textContent = text; $('stream-status').classList.toggle('live', live); };
+  const queueDiff = (immediate = false) => {
+    if (!current()) return;
+    if (diffBusy) { diffAgain = true; return; }
+    if (diffTimer && !immediate) return;
+    clearTimeout(diffTimer);
+    diffTimer = setTimeout(async () => {
+      diffTimer = null; diffBusy = true;
+      try { const text = await (await api(`/sandboxes/${run.id}/diff`, undefined, 'GET', controller.signal)).text(); if (current()) renderDiff(text); }
+      catch (error) { if (current() && terminal && error.name !== 'AbortError') showNotice(error.message); }
+      finally { diffBusy = false; if (diffAgain && current()) { diffAgain = false; queueDiff(terminal); } }
+    }, immediate ? 0 : 2000);
+  };
+  liveCleanup = () => { stream.close(); controller.abort(); clearTimeout(diffTimer); };
+  updateStream('Conectando actividad…');
+  stream.onopen = () => updateStream('En vivo', true);
+  stream.addEventListener('reset', () => { if (current()) { view = activity('', '', run); view.note('Mostrando la salida guardada más reciente.'); } });
+  stream.addEventListener('stdout', event => { if (current() && view.stdout(JSON.parse(event.data))) queueDiff(); });
+  stream.addEventListener('stderr', event => { if (current()) view.stderr(JSON.parse(event.data)); });
+  stream.addEventListener('notice', event => { if (current()) updateStream(JSON.parse(event.data).message || 'Reconectando…'); });
+  stream.addEventListener('status', event => {
+    if (!current()) return;
+    const status = JSON.parse(event.data);
+    run.state = status.state === 'none' ? 'lost' : (status.state === 'running' && stoppingTasks.has(run.id) ? 'stopping' : status.state);
+    terminal = !['running', 'stopping'].includes(run.state);
+    if (terminal) run.finishedAt ||= Date.now();
+    state(run);
+    if (status.result || status.error) { $('result').hidden = false; $('result').querySelector('.result-icon').textContent = run.state === 'cancelled' ? '■' : status.error ? '!' : '✓'; $('result').querySelector('h3').textContent = run.state === 'cancelled' ? 'Resultado de la tarea' : 'Respuesta del agente'; $('result-text').textContent = run.state === 'cancelled' ? 'La tarea se detuvo.' : status.result || status.error; }
+    if (run.state === 'lost') showNotice('El entorno ya no está disponible. Se muestran los resultados guardados, si los hay.');
+  });
+  stream.addEventListener('done', () => {
+    if (!current()) return;
+    completed = true; terminal = true; view.finish(); stream.close(); void refreshPullRequest(run);
+    updateStream(run.state === 'cancelled' ? 'Tarea detenida' : 'Actividad guardada');
+    queueDiff(true);
+  });
+  stream.onerror = () => {
+    if (!current() || completed) return;
+    updateStream('Reconectando…');
+    if (Date.now() - authCheckedAt > 10000) {
+      authCheckedAt = Date.now();
+      void api('/session').catch(error => { if (ticket === generation) showNotice(error.message); });
+    }
+  };
 }
+$('stop-task').addEventListener('click', async () => {
+  const run = selected;
+  if (!connected || !run || stoppingTasks.has(run.id) || !['running', 'stopping'].includes(run.state)) return;
+  stoppingTasks.add(run.id); run.state = 'stopping'; state(run);
+  try {
+    const result = await (await api(`/sandboxes/${run.id}/task`, undefined, 'DELETE')).json();
+    run.state = result.state; if (!['running', 'stopping'].includes(run.state)) run.finishedAt ||= Date.now();
+    saveHistory(); updateSubmit();
+    if (selected?.id === run.id) await selectRun(run);
+  } catch (error) {
+    if (selected?.id === run.id) { await selectRun(run); showNotice(`No pudimos confirmar la detención: ${error.message}`); }
+  } finally {
+    stoppingTasks.delete(run.id);
+    if (selected?.id === run.id) state(run);
+  }
+});
+window.addEventListener('pagehide', closeLive);
+window.addEventListener('pageshow', event => { if (event.persisted && selected && connected) selectRun(selected); });
 $('task-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (!connected) return authDialog(); if (busy || history.some(run => ['cloning', 'running'].includes(run.state))) return;
+  event.preventDefault(); if (!connected) return authDialog(); if (busy || history.some(run => ['cloning', 'running', 'stopping'].includes(run.state))) return;
   let repository; try { repository = new URL($('repository').value); } catch { return showNotice('Conecta GitHub y elige un repositorio.'); }
   if (repository.protocol !== 'https:' || repository.hostname !== 'github.com' || repository.username || repository.password || repository.port || repository.search || repository.hash || !/^\/[\w.-]+\/[\w.-]+\/?$/.test(repository.pathname)) return showNotice('Usa https://github.com/usuario/repositorio, sin credenciales ni parámetros.');
   const prompt = $('prompt').value.trim(); if (!prompt) return showNotice('Describe la tarea antes de ejecutarla.');
@@ -168,7 +215,7 @@ $('task-form').addEventListener('submit', async event => {
     run.state = 'running'; busy = false; saveHistory(); updateSubmit(); selectRun(run);
   } catch (error) { run.state = 'failed'; run.finishedAt = Date.now(); busy = false; state(run); showNotice(error.message); activity('', error.message, run); }
 });
-$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); generation++; selected = null; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
+$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); closeLive(); generation++; selected = null; $('create-pr').hidden = true; $('view-pr').hidden = true; $('stop-task').hidden = true; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running', 'stopping'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
 $('example').addEventListener('click', () => { if (![...$('repository').options].some(option => option.value === 'https://github.com/octocat/Hello-World')) { const option = document.createElement('option'); option.value = 'https://github.com/octocat/Hello-World'; option.textContent = 'Público · octocat/Hello-World (ejemplo)'; $('repository').append(option); } $('repository').disabled = false; $('repository').value = 'https://github.com/octocat/Hello-World'; $('prompt').value = 'Crea un archivo NOTES.md con un breve resumen del repositorio. Comprueba que el archivo existe. No hagas commit.'; $('prompt').focus(); });
 
 let repositories = [];
@@ -232,7 +279,7 @@ async function refreshGitHub() {
     if (ticket !== githubGeneration || !connected) return;
     if (!response.connected) { clearGitHub(); return; }
     $('github-status').textContent = response.accounts.join(', ');
-    $('github-description').textContent = 'Acceso de lectura a los repositorios autorizados.';
+    $('github-description').textContent = 'Repositorios autorizados para tareas y propuestas de cambios.';
     $('github-connect').hidden = true; $('github-actions').hidden = false;
     await loadRepositories(false, ticket);
   } catch (error) { if (ticket === githubGeneration) githubError(error.message); }
@@ -280,3 +327,38 @@ renderHistory();
   try { const response = await fetch('/session', { cache: 'no-store', credentials: 'same-origin' }); setConnected(response.ok); } catch { setConnected(false); showNotice('No pudimos comprobar la conexión con el runner.'); }
   if (history.length) selectRun(history[0]);
 })();
+
+let publishingTask = null;
+async function refreshPullRequest(run) {
+  if (!connected || selected?.id !== run.id) return;
+  try {
+    const info = await (await api(`/sandboxes/${run.id}/pull-request`)).json();
+    if (!connected || selected?.id !== run.id) return;
+    $('view-pr').hidden = !info.pr; $('create-pr').hidden = Boolean(info.pr);
+    $('create-pr').disabled = !info.available; $('create-pr').title = info.reason || 'Publicar los cambios revisados en un PR en borrador';
+    if (info.pr) { $('view-pr').href = info.pr.url; $('view-pr').textContent = `Ver PR #${info.pr.number}`; }
+    else if (!info.available) { $('create-pr').hidden = false; showNotice(info.reason); }
+  } catch (error) { if (selected?.id === run.id) showNotice(error.message); }
+}
+$('create-pr').addEventListener('click', async () => {
+  if (!connected || !selected || $('create-pr').disabled) return;
+  publishingTask = selected;
+  $('pr-title').value = `Apply ${names[selected.agent]} task changes`;
+  $('pr-description').value = ''; $('pr-error').hidden = true; $('pr-submit').disabled = false;
+  $('pr-permissions').hidden = true; $('pr-dialog').showModal();
+  try {
+    const status = await (await api('/github/status')).json();
+    if (status.permissionsUrl) { $('pr-permissions').href = status.permissionsUrl; $('pr-permissions').hidden = false; }
+  } catch {}
+});
+$('pr-cancel').addEventListener('click', () => $('pr-dialog').close());
+$('pr-form').addEventListener('submit', async event => {
+  event.preventDefault(); const run = publishingTask;
+  if (!connected || !run || $('pr-submit').disabled) return;
+  $('pr-submit').disabled = true; $('pr-submit').textContent = 'Creando PR…'; $('pr-error').hidden = true;
+  try {
+    await api(`/sandboxes/${run.id}/pull-request`, { title: $('pr-title').value.trim(), description: $('pr-description').value.trim() });
+    $('pr-dialog').close(); await refreshPullRequest(run);
+  } catch (error) { $('pr-error').textContent = error.message; $('pr-error').hidden = false; }
+  finally { $('pr-submit').disabled = false; $('pr-submit').textContent = 'Crear PR en borrador'; }
+});
