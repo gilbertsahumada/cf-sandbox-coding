@@ -8,7 +8,7 @@ El endpoint ya está configurado como `https://ap-southeast-1.maas.qwencloudapi.
 
 El código está en [gilbertsahumada/cf-sandbox-coding](https://github.com/gilbertsahumada/cf-sandbox-coding). El flujo de trabajo, la primera tarea y los límites actuales están en [docs/SELF_IMPROVEMENT.md](docs/SELF_IMPROVEMENT.md). Cada mejora produce un patch revisable; no hay merges ni despliegues automáticos.
 
-La conexión real de GitHub sigue pendiente de reparación y verificación. Por ahora, un repositorio privado no puede seleccionarse hasta completar esa conexión.
+La conexión GitHub y la clonación de un repositorio privado autorizado están verificadas en producción. La descarga conserva las credenciales fuera del sandbox.
 
 ## Interfaz web
 
@@ -135,7 +135,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 18 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 19 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check

@@ -12,11 +12,11 @@ Repositorio: https://github.com/gilbertsahumada/cf-sandbox-coding
 
 La integración actual tiene permisos de lectura. Todavía no abre pull requests desde la interfaz ni inicia mejoras periódicas. GitHub Actions verifica los commits y pull requests sin credenciales del modelo o de Cloudflare.
 
-## Primera tarea: verificar la conexión GitHub
+## Estado de la conexión GitHub
 
-Se identificó que Cloudflare rechaza redirect: error y se corrigió a redirect: manual, manteniendo bloqueadas las redirecciones. La integración real aún no está validada; no debe marcarse como completada por pasar las pruebas unitarias.
+Se corrigieron dos fallos: Cloudflare rechaza redirect: error, y la comprobación de permisos consumía el cuerpo POST de Git antes de enviarlo. El registro, el catálogo y una clonación privada ya están verificados en Cloudflare. Las tareas con Pi y OpenCode contra repositorios públicos se probaron anteriormente; esta comprobación privada solo clonó el repositorio y no envió su código al modelo.
 
-Prompt sugerido:
+Tarea de mejora sugerida:
 
 > Investiga el flujo de conexión GitHub desde el botón de la interfaz hasta los callbacks de manifiesto e instalación. Reproduce el fallo con pruebas que cubran el intercambio realista de respuestas y los errores del Durable Object. Corrige la causa demostrada, conserva la validación de estado y cookies, y muestra errores útiles sin revelar credenciales. Ejecuta npm run check y npm test. Entrega el diff e indica qué requiere todavía verificación en GitHub real. No hagas commit ni despliegues.
 

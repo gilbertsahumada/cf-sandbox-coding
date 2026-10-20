@@ -44,12 +44,15 @@ export async function githubRequest(path: string, token?: string, body?: unknown
   }
   return response.status === 204 ? null : response.json();
 }
-export function gitReadRequest(request: Request, grant: RepositoryGrant, token: string): Request | Response {
+export function isGitReadRequest(request: Request, grant: RepositoryGrant): boolean {
   const url = new URL(request.url);
   const prefix = `/${grant.fullName}.git`;
   const allowed = (request.method === 'GET' && url.pathname === `${prefix}/info/refs` && url.search === '?service=git-upload-pack') ||
     (request.method === 'POST' && url.pathname === `${prefix}/git-upload-pack` && url.search === '');
-  if (url.origin !== 'https://github.com' || !allowed) return new Response('GitHub access is limited to reading the selected repository', { status: 403 });
+  return url.origin === 'https://github.com' && allowed;
+}
+export function gitReadRequest(request: Request, grant: RepositoryGrant, token: string): Request | Response {
+  if (!isGitReadRequest(request, grant)) return new Response('GitHub access is limited to reading the selected repository', { status: 403 });
   const headers = new Headers(request.headers);
   for (const key of ['authorization', 'cookie', 'x-api-key', 'cf-aig-authorization']) headers.delete(key);
   headers.set('authorization', `Basic ${btoa(`x-access-token:${token}`)}`);

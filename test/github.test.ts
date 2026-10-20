@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { appJwt, appManifest, gitReadRequest, validState } from '../src/github-api';
+import { appJwt, appManifest, gitReadRequest, isGitReadRequest, validState } from '../src/github-api';
 const grant = { installationId: 1, repositoryId: 42, fullName: 'owner/private-repo' };
 test('GitHub App requests only read access and no user OAuth scopes or webhooks', () => {
   const manifest = appManifest('https://runner.example', 'test');
@@ -80,4 +80,19 @@ test('GitHub API uses Cloudflare-compatible manual redirects and rejects a redir
     return true;
   });
   assert.equal(calls, 1);
+});
+
+
+test('private Git POST policy check preserves the upload-pack body for authenticated forwarding', async () => {
+  const body = '0014command=fetch\n0001';
+  const request = new Request('https://github.com/owner/private-repo.git/git-upload-pack', {
+    method: 'POST', body, headers: { 'content-type': 'application/x-git-upload-pack-request', 'git-protocol': 'version=2' },
+  });
+  assert.equal(isGitReadRequest(request, grant), true);
+  assert.equal(request.bodyUsed, false);
+  const forwarded = gitReadRequest(request, grant, 'test-credential');
+  assert.ok(forwarded instanceof Request);
+  assert.equal(forwarded.headers.get('content-type'), 'application/x-git-upload-pack-request');
+  assert.equal(forwarded.headers.get('git-protocol'), 'version=2');
+  assert.equal(await forwarded.text(), body);
 });
