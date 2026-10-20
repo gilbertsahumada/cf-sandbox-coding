@@ -14,10 +14,22 @@ La conexión GitHub y la clonación de un repositorio privado autorizado están 
 
 Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **Conectar**. Introduce el valor de `RUNNER_API_TOKEN` de tu archivo local `.dev.vars`; no uses la API key de Qwen.
 
-1. Elige Pi u OpenCode.
+1. Pulsa **Nueva sesión** y elige Pi u OpenCode.
 2. Conecta GitHub, autoriza los repositorios y elige uno en el selector. Puedes buscar entre públicos y privados y especificar una rama o etiqueta.
-3. Describe la tarea y pulsa **Ejecutar tarea**.
-4. Responde en **Conversación de la tarea** para continuar con el mismo agente, contexto y repositorio. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
+3. Describe la tarea y pulsa **Iniciar sesión de trabajo**.
+4. Responde en el panel **Agente** para continuar con el mismo agente, contexto y repositorio. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
+
+El workspace usa React, Vite y componentes shadcn/ui (Radix Nova). A la izquierda están las sesiones recientes y los archivos modificados; el centro muestra el diff por archivo con números de línea; a la derecha está el chat. Los paneles se pueden redimensionar y la actividad de herramientas se puede plegar. En móvil se alternan Sesiones, Cambios y Chat. El código se revisa en **solo lectura**: esta versión muestra los archivos del patch, no incluye edición manual ni explorador completo del repositorio.
+
+Desarrollo de la interfaz:
+
+```sh
+npm run dev           # Compila la interfaz y abre el Worker local.
+npm run dev:ui        # Vite con recarga; requiere el Worker local en :8787.
+npm run preview:editor # Interfaz con datos simulados en :8795, sin claves ni red externa.
+```
+
+El build escribe los recursos en `dist/ui`; `npm run deploy` lo ejecuta antes de Wrangler. En desarrollo con Wrangler, vuelve a compilar la UI después de editarla; Vite ofrece recarga inmediata en un segundo proceso. Las fuentes IBM Plex se sirven desde el mismo origen y la CSP mantiene bloqueados los scripts y estilos inline. La previsualización simulada usa `fixture-runner-token` únicamente si pruebas cerrar y abrir su sesión local; nunca introduces claves reales allí.
 
 La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial conserva las últimas 12 tareas en este navegador. Para tareas privadas solo conserva el identificador, agente, tiempos y estado; no guarda nombres de repositorios, ramas, instrucciones, logs ni cambios. Los nombres privados se sustituyen por una etiqueta genérica y esas entradas se eliminan al cerrar sesión. Un enlace `/?task=ID` permite recuperar una tarea existente después de autenticarte. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
 
@@ -161,6 +173,7 @@ Verificado en esta sesión: compilación TypeScript, 49 pruebas automáticas, au
 ```sh
 npm run check
 npm test
+npm run build
 npx wrangler deploy --dry-run --outdir dist
 docker build --platform linux/amd64 -t cf-sandbox-coding:local .
 docker run --rm --platform linux/amd64 --network none -v "$PWD/scripts/smoke-container.mjs:/test.mjs:ro" cf-sandbox-coding:local node /test.mjs
@@ -222,3 +235,7 @@ docker run --rm --platform linux/amd64 --network none -v "$PWD/scripts/smoke-cha
 ```
 
 Verificado con ambos CLI reales y un proveedor simulado: dos turnos, recuerdo de un dato presente solo en el primer mensaje, restauración del workspace y conservación de los dos archivos modificados. No se ha verificado todavía esta continuación con Qwen en Cloudflare. Prueba de navegador con datos simulados: respuesta HTTP perdida, reintento con un único turno nuevo y conversación recuperada al recargar (`verification/chat-ui.png`).
+
+## Verificación del nuevo workspace
+
+La migración a React y shadcn conserva la API del runner. Sus pruebas de navegador usan `scripts/preview-editor.mjs`, con respuestas y SSE simulados: restaurar una tarea por enlace, continuar el chat y recuperar sus turnos al recargar, crear una sesión OpenCode, detenerla, recordar el repositorio, paginar el catálogo, revisar archivos y reintentar un PR después de un error. Esta verificación no ejecuta agentes reales ni publica propuestas en GitHub. Las pruebas automáticas cubren los paths y números de línea del diff, eventos de texto del asistente, enlaces de PR y los recursos estáticos bajo la CSP.

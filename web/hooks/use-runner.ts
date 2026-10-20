@@ -1,0 +1,712 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { historyForStorage, recoveredRun } from "@/lib/run-history.js";
+import { createActivity } from "@/lib/activity.js";
+import { assistantStream } from "@/lib/editor";
+import {
+  isActive,
+  type Agent,
+  type Conversation,
+  type GitHubStatus,
+  type Proposal,
+  type Repository,
+  type Run,
+  type RunState,
+} from "@/lib/types";
+function initialHistory(): Run[] {
+  let runs: Run[] = [];
+  try {
+    runs = historyForStorage(
+      JSON.parse(localStorage.getItem("sandbox-runs") || "[]"),
+    ) as Run[];
+  } catch {}
+  runs = runs.map((run) =>
+    run.state === "cloning"
+      ? { ...run, state: "failed", finishedAt: Date.now() }
+      : run,
+  );
+  const recovered = recoveredRun(
+    new URL(location.href).searchParams.get("task"),
+  ) as Run | null;
+  return recovered
+    ? [
+        runs.find((run) => run.id === recovered.id) || recovered,
+        ...runs.filter((run) => run.id !== recovered.id),
+      ].slice(0, 12)
+    : runs;
+}
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : "No se pudo completar la operación.";
+export function useRunner() {
+  const [runs, setRuns] = useState<Run[]>(initialHistory);
+  const [selectedId, setSelectedId] = useState(() => runs[0]?.id || null);
+  const selected = runs.find((run) => run.id === selectedId) || null;
+  const [connected, setConnected] = useState(false),
+    [checking, setChecking] = useState(true),
+    [authOpen, setAuthOpen] = useState(false);
+  const [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false),
+    [sending, setSending] = useState(false),
+    [stopping, setStopping] = useState(false);
+  const [conversation, setConversation] = useState<Conversation | null>(null),
+    [liveText, setLiveText] = useState<string | null>(null);
+  const [diff, setDiff] = useState(""),
+    [proposal, setProposal] = useState<Proposal | null>(null),
+    [streamState, setStreamState] = useState(""),
+    [loadingTask, setLoadingTask] = useState(false);
+  const [revision, setRevision] = useState(0),
+    [activityCount, setActivityCount] = useState(0);
+  const activityRef = useRef<HTMLDivElement>(null),
+    followRef = useRef(true);
+  const authEpoch = useRef(0),
+    selectedRef = useRef(selectedId),
+    catalogEpoch = useRef(0);
+  selectedRef.current = selectedId;
+  const [github, setGithub] = useState<GitHubStatus | null>(null),
+    [repositories, setRepositories] = useState<Repository[]>([]),
+    [repository, setRepository] = useState<Repository | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false),
+    [repositoryPage, setRepositoryPage] = useState(1),
+    [repositoryTotal, setRepositoryTotal] = useState(0),
+    [hasMore, setHasMore] = useState(false);
+  const rememberQueue = useRef(Promise.resolve()),
+    pendingMessage = useRef<{
+      task: string;
+      id: string;
+      prompt: string;
+    } | null>(null);
+  const channel = useRef<BroadcastChannel | null>(null);
+  const observedTask = useRef<string | null>(null);
+  const clearSession = useCallback(() => {
+    authEpoch.current++;
+    catalogEpoch.current++;
+    setConnected(false);
+    setRuns((items) => items.filter((run) => !run.private));
+    setSelectedId(null);
+    setConversation(null);
+    setLiveText(null);
+    setDiff("");
+    setProposal(null);
+    setGithub(null);
+    setRepositories([]);
+    setRepository(null);
+    setStreamState("");
+    activityRef.current?.replaceChildren();
+    setActivityCount(0);
+    pendingMessage.current = null;
+  }, []);
+  const request = useCallback(
+    async (
+      path: string,
+      body?: unknown,
+      method?: string,
+      options: { signal?: AbortSignal; keepalive?: boolean } = {},
+    ) => {
+      const epoch = authEpoch.current;
+      const response = await fetch(path, {
+        method: method || (body ? "POST" : "GET"),
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: body ? { "content-type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: options.signal || AbortSignal.timeout(180000),
+        keepalive: options.keepalive,
+      });
+      if (epoch !== authEpoch.current)
+        throw new DOMException("Session changed", "AbortError");
+      if (response.status === 401) {
+        clearSession();
+        setAuthOpen(true);
+        throw Error("Tu sesión terminó. Conecta para continuar.");
+      }
+      if (!response.ok) {
+        let detail = "";
+        try {
+          const data = await response.json();
+          detail =
+            data.message || data.stderr || data.error?.[0]?.message || "";
+        } catch {}
+        throw Error(
+          detail || `No se pudo completar la solicitud (${response.status}).`,
+        );
+      }
+      return response;
+    },
+    [clearSession],
+  );
+  const report = useCallback((error: unknown) => {
+    if (!(error instanceof DOMException && error.name === "AbortError"))
+      setNotice(message(error));
+  }, []);
+  const updateRun = useCallback(
+    (id: string, update: Partial<Run>) =>
+      setRuns((items) =>
+        items.map((run) => (run.id === id ? { ...run, ...update } : run)),
+      ),
+    [],
+  );
+  const activate = useCallback((id: string) => {
+    setSelectedId(id);
+    setRevision((value) => value + 1);
+    setNotice("");
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "sandbox-runs",
+        JSON.stringify(historyForStorage(runs)),
+      );
+    } catch {}
+  }, [runs]);
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (selectedId) url.searchParams.set("task", selectedId);
+    else url.searchParams.delete("task");
+    window.history.replaceState(null, "", url);
+  }, [selectedId]);
+  useEffect(() => {
+    let current = true;
+    const epoch = authEpoch.current;
+    fetch("/session", { credentials: "same-origin", cache: "no-store" })
+      .then((response) => {
+        if (current && epoch === authEpoch.current) setConnected(response.ok);
+      })
+      .catch(report)
+      .finally(() => {
+        if (current) setChecking(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [report]);
+  useEffect(() => {
+    if (typeof BroadcastChannel !== "function") return;
+    const instance = new BroadcastChannel("sandbox-task-updates");
+    channel.current = instance;
+    instance.onmessage = (event) => {
+      if (selectedRef.current === event.data?.task)
+        setRevision((value) => value + 1);
+    };
+    return () => {
+      instance.close();
+      channel.current = null;
+    };
+  }, []);
+  const loadRepositories = useCallback(
+    async (append = false, page = 1, ticket = catalogEpoch.current) => {
+      setCatalogBusy(true);
+      try {
+        const [batch, saved] = await Promise.allSettled([
+          request(`/github/repositories?page=${page}`).then((response) =>
+            response.json(),
+          ),
+          append
+            ? Promise.resolve(null)
+            : request("/github/selected-repository").then((response) =>
+                response.json(),
+              ),
+        ]);
+        if (batch.status === "rejected") throw batch.reason;
+        if (ticket !== catalogEpoch.current) return;
+        const data = batch.value,
+          remembered = saved.status === "fulfilled" ? saved.value : null;
+        setRepositories((items) => [
+          ...new Map(
+            [
+              ...(append ? items : []),
+              ...(remembered?.repository ? [remembered.repository] : []),
+              ...data.repositories,
+            ].map((repo: Repository) => [repo.url, repo]),
+          ).values(),
+        ]);
+        setRepositoryPage(page);
+        setRepositoryTotal(data.total);
+        setHasMore(data.hasMore);
+        if (remembered?.repository) setRepository(remembered.repository);
+        if (remembered?.warning) setNotice(remembered.warning);
+      } catch (error) {
+        if (ticket === catalogEpoch.current) report(error);
+      } finally {
+        if (ticket === catalogEpoch.current) setCatalogBusy(false);
+      }
+    },
+    [report, request],
+  );
+  useEffect(() => {
+    if (!connected) return;
+    const ticket = ++catalogEpoch.current;
+    request("/github/status")
+      .then((response) => response.json())
+      .then((data) => {
+        if (ticket !== catalogEpoch.current) return;
+        setGithub(data);
+        if (data.connected) void loadRepositories(false, 1, ticket);
+      })
+      .catch(report);
+    return () => {
+      catalogEpoch.current++;
+    };
+  }, [connected, loadRepositories, report, request]);
+  const chooseRepository = useCallback(
+    (repo: Repository) => {
+      setRepository(repo);
+      const ticket = catalogEpoch.current;
+      rememberQueue.current = rememberQueue.current
+        .catch(() => {})
+        .then(async () => {
+          if (ticket !== catalogEpoch.current) return;
+          try {
+            await request(
+              "/github/selected-repository",
+              {
+                installationId: repo.installationId,
+                repositoryId: repo.repositoryId,
+              },
+              "PUT",
+              { keepalive: true },
+            );
+          } catch (error) {
+            if (ticket === catalogEpoch.current) report(error);
+          }
+        });
+    },
+    [report, request],
+  );
+  const connectGitHub = useCallback(async () => {
+    if (!connected) {
+      setAuthOpen(true);
+      return;
+    }
+    const data = await (await request("/github/connect", {})).json();
+    if (data.url) {
+      location.assign(data.url);
+      return;
+    }
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = data.action;
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "manifest";
+    input.value = JSON.stringify(data.manifest);
+    form.append(input);
+    document.body.append(form);
+    form.submit();
+  }, [connected, request]);
+  const disconnectGitHub = useCallback(async () => {
+    const data = await (
+      await request("/github/connection", undefined, "DELETE")
+    ).json();
+    catalogEpoch.current++;
+    setGithub(null);
+    setRepositories([]);
+    setRepository(null);
+    setHasMore(false);
+    setRepositoryTotal(0);
+    if (data.warning) setNotice(data.warning);
+  }, [request]);
+  // A stream observer belongs to a selected view, never to the agent's lifetime.
+  useEffect(() => {
+    if (observedTask.current !== selectedId || !connected) {
+      setConversation(null);
+      setDiff("");
+    }
+    observedTask.current = selectedId;
+    setProposal(null);
+    setLiveText(null);
+    setStreamState("");
+    setLoadingTask(false);
+    activityRef.current?.replaceChildren();
+    setActivityCount(0);
+    if (!connected || !selectedId) return;
+    const run = runs.find((item) => item.id === selectedId);
+    if (!run || run.state === "cloning") return;
+    let current = true,
+      source: EventSource | undefined,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      busyDiff = false,
+      again = false,
+      terminal = false,
+      authCheckedAt = 0;
+    const controller = new AbortController();
+    setLoadingTask(true);
+    setStreamState("Conectando");
+    const transcript = assistantStream(setLiveText);
+    const activity = () =>
+      activityRef.current
+        ? createActivity(
+            activityRef.current,
+            run,
+            {
+              set textContent(value: string) {
+                if (current) setActivityCount(Number(value));
+              },
+            },
+            {
+              get checked() {
+                return followRef.current;
+              },
+            },
+          )
+        : null;
+    let view = activity();
+    const freshConversation = async () => {
+      const info: Conversation = await (
+        await request(`/sandboxes/${run.id}/messages`, undefined, "GET", {
+          signal: controller.signal,
+        })
+      ).json();
+      if (current) {
+        setConversation(info);
+        setLiveText(null);
+      }
+      return info;
+    };
+    const refreshProposal = async () => {
+      const info: Proposal = await (
+        await request(`/sandboxes/${run.id}/pull-request`, undefined, "GET", {
+          signal: controller.signal,
+        })
+      ).json();
+      if (current) setProposal(info);
+    };
+    const queueDiff = (immediate = false) => {
+      if (!current) return;
+      if (busyDiff) {
+        again = true;
+        return;
+      }
+      if (timer && !immediate) return;
+      clearTimeout(timer);
+      timer = setTimeout(
+        async () => {
+          timer = undefined;
+          busyDiff = true;
+          try {
+            const text = await (
+              await request(`/sandboxes/${run.id}/diff`, undefined, "GET", {
+                signal: controller.signal,
+              })
+            ).text();
+            if (current) setDiff(text);
+          } catch (error) {
+            if (current && terminal) report(error);
+          } finally {
+            busyDiff = false;
+            if (again && current) {
+              again = false;
+              queueDiff(terminal);
+            }
+          }
+        },
+        immediate ? 0 : 2000,
+      );
+    };
+    const begin = async () => {
+      const info = await freshConversation();
+      if (!current) return;
+      setLoadingTask(false);
+      source = new EventSource(`/sandboxes/${run.id}/events?turn=${info.turn}`);
+      source.onopen = () => {
+        if (current) setStreamState("En vivo");
+      };
+      source.addEventListener("turn", (event) => {
+        if (current && JSON.parse(event.data).turn !== info.turn)
+          setRevision((value) => value + 1);
+      });
+      source.addEventListener("reset", () => {
+        if (current) {
+          transcript.reset();
+          view = activity();
+          view?.note("Salida archivada más reciente.");
+        }
+      });
+      source.addEventListener("stdout", (event) => {
+        if (current) {
+          const text = JSON.parse(event.data);
+          transcript.push(text);
+          if (view?.stdout(text)) queueDiff();
+        }
+      });
+      source.addEventListener("stderr", (event) => {
+        if (current) view?.stderr(JSON.parse(event.data));
+      });
+      source.addEventListener("notice", () => {
+        if (current) setStreamState("Reconectando");
+      });
+      source.addEventListener("status", (event) => {
+        if (!current) return;
+        const status = JSON.parse(event.data),
+          state: RunState = status.state === "none" ? "lost" : status.state;
+        terminal = !isActive(state);
+        updateRun(run.id, {
+          state,
+          ...(terminal ? { finishedAt: Date.now() } : {}),
+        });
+        if (status.result || status.error)
+          setConversation((previous) =>
+            previous?.turns.length
+              ? previous
+              : {
+                  ...info,
+                  state,
+                  canContinue: info.canContinue,
+                  turns: [
+                    {
+                      number: 0,
+                      id: "legacy",
+                      prompt: "Resultado de esta tarea",
+                      response: status.result || status.error,
+                      state,
+                      startedAt: run.startedAt || 0,
+                    },
+                  ],
+                },
+          );
+      });
+      source.addEventListener("done", () => {
+        if (!current) return;
+        source?.close();
+        view?.finish();
+        terminal = true;
+        setStreamState("Guardado");
+        queueDiff(true);
+        void freshConversation()
+          .then((data) => {
+            if (current && !data.turns.length)
+              return request(`/sandboxes/${run.id}/task`, undefined, "GET", {
+                signal: controller.signal,
+              })
+                .then((response) => response.json())
+                .then((status) => {
+                  if (current && (status.result || status.error))
+                    setConversation({
+                      ...data,
+                      turns: [
+                        {
+                          number: 0,
+                          id: "legacy",
+                          prompt: "Resultado de esta tarea",
+                          response: status.result || status.error,
+                          state: status.state,
+                          startedAt: run.startedAt || 0,
+                        },
+                      ],
+                    });
+                });
+          })
+          .catch((error) => {
+            if (current) report(error);
+          });
+        void refreshProposal().catch((error) => {
+          if (current) report(error);
+        });
+      });
+      source.onerror = () => {
+        if (!current || terminal) return;
+        setStreamState("Reconectando");
+        if (Date.now() - authCheckedAt > 10000) {
+          authCheckedAt = Date.now();
+          void request("/session").catch((error) => {
+            if (current) report(error);
+          });
+        }
+      };
+    };
+    void begin().catch((error) => {
+      if (current) {
+        setLoadingTask(false);
+        report(error);
+      }
+    });
+    const hide = () => {
+      source?.close();
+      controller.abort();
+    };
+    const show = (event: PageTransitionEvent) => {
+      if (event.persisted) setRevision((value) => value + 1);
+    };
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("pageshow", show);
+    return () => {
+      current = false;
+      hide();
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("pageshow", show);
+    };
+    // Run metadata is updated by the stream. Only a deliberate view/turn change opens another observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, selectedId, revision, report, request, updateRun]);
+  const login = async (token: string) => {
+    const response = await fetch("/session", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { authorization: `Bearer ${token.trim()}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok)
+      throw Error(
+        "No se pudo conectar. Usa RUNNER_API_TOKEN, no la clave de Qwen.",
+      );
+    setAuthOpen(false);
+    setConnected(true);
+    setNotice("");
+  };
+  const logout = async () => {
+    await request("/session", undefined, "DELETE");
+    clearSession();
+    setNotice("Sesión cerrada. El agente en la nube continúa trabajando.");
+  };
+  const start = async (
+    agent: Agent,
+    prompt: string,
+    repo: Repository | null,
+    ref: string,
+    example = false,
+  ) => {
+    if (!connected) {
+      setAuthOpen(true);
+      throw Error("Conecta tu espacio para empezar.");
+    }
+    if (busy || runs.some((run) => isActive(run.state)))
+      throw Error("Ya hay una tarea en curso. Ábrela para seguir trabajando.");
+    if (!repo && !example) throw Error("Elige un repositorio de GitHub.");
+    const run: Run = {
+      id: `${agent}-${crypto.randomUUID()}`,
+      agent,
+      private: repo?.private || false,
+      repository: repo?.url || "https://github.com/octocat/Hello-World",
+      ref,
+      state: "cloning",
+      startedAt: Date.now(),
+    };
+    setBusy(true);
+    setRuns((items) => [run, ...items].slice(0, 12));
+    setSelectedId(run.id);
+    setNotice("");
+    try {
+      await request(`/sandboxes/${run.id}/repository`, {
+        ...(repo
+          ? {
+              installationId: repo.installationId,
+              repositoryId: repo.repositoryId,
+            }
+          : { url: run.repository }),
+        ...(ref ? { ref } : {}),
+      });
+      await request(`/sandboxes/${run.id}/task`, { agent, prompt });
+      updateRun(run.id, { state: "running" });
+      setRevision((value) => value + 1);
+    } catch (error) {
+      updateRun(run.id, { state: "failed", finishedAt: Date.now() });
+      report(error);
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const send = async (prompt: string) => {
+    if (
+      !selected ||
+      !conversation?.canContinue ||
+      isActive(selected.state) ||
+      sending
+    )
+      throw Error(
+        "Espera a que termine el agente antes de enviar otro mensaje.",
+      );
+    const run = selected;
+    if (
+      !pendingMessage.current ||
+      pendingMessage.current.task !== run.id ||
+      pendingMessage.current.prompt !== prompt
+    )
+      pendingMessage.current = {
+        task: run.id,
+        id: crypto.randomUUID(),
+        prompt,
+      };
+    setSending(true);
+    try {
+      await request(`/sandboxes/${run.id}/messages`, {
+        id: pendingMessage.current.id,
+        prompt,
+      });
+      pendingMessage.current = null;
+      updateRun(run.id, { state: "running", finishedAt: undefined });
+      channel.current?.postMessage({ task: run.id });
+      if (selectedRef.current === run.id) setRevision((value) => value + 1);
+    } finally {
+      setSending(false);
+    }
+  };
+  const stop = async () => {
+    if (!selected || stopping) return;
+    const id = selected.id;
+    setStopping(true);
+    updateRun(id, { state: "stopping" });
+    try {
+      const result = await (
+        await request(`/sandboxes/${id}/task`, undefined, "DELETE")
+      ).json();
+      updateRun(id, { state: result.state, finishedAt: Date.now() });
+      channel.current?.postMessage({ task: id });
+    } catch (error) {
+      report(error);
+    } finally {
+      setStopping(false);
+      if (selectedRef.current === id) setRevision((value) => value + 1);
+    }
+  };
+  const publish = async (title: string, description: string) => {
+    if (!selected) return;
+    const id = selected.id;
+    await request(`/sandboxes/${id}/pull-request`, { title, description });
+    const info: Proposal = await (
+      await request(`/sandboxes/${id}/pull-request`)
+    ).json();
+    if (selectedRef.current === id) setProposal(info);
+  };
+  return {
+    runs,
+    selected,
+    connected,
+    checking,
+    authOpen,
+    setAuthOpen,
+    notice,
+    setNotice,
+    busy,
+    sending,
+    stopping,
+    conversation,
+    liveText,
+    diff,
+    proposal,
+    streamState,
+    loadingTask,
+    activityRef,
+    activityCount,
+    followRef,
+    github,
+    repositories,
+    repository,
+    catalogBusy,
+    repositoryTotal,
+    hasMore,
+    chooseRepository,
+    connectGitHub,
+    disconnectGitHub,
+    loadMore: () => loadRepositories(true, repositoryPage + 1),
+    activate,
+    login,
+    logout,
+    start,
+    send,
+    stop,
+    publish,
+    report,
+    hasActiveRun: runs.some((run) => isActive(run.state)),
+  };
+}
+export type Runner = ReturnType<typeof useRunner>;

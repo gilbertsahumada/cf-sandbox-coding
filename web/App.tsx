@@ -1,0 +1,1114 @@
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type RefObject,
+} from "react";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronRight,
+  CircleHelp,
+  Cloud,
+  CloudCheck,
+  Code2,
+  Download,
+  FileCode2,
+  FileDiff,
+  Files,
+  GitBranch,
+  GitPullRequest,
+  GitFork as Github,
+  LoaderCircle,
+  MessageSquare,
+  PanelBottom,
+  PanelLeftClose,
+  Plus,
+  Search,
+  Settings2,
+  Square,
+  SquareTerminal,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  AuthDialog,
+  NewSessionDialog,
+  PublishDialog,
+  SettingsDialog,
+} from "@/components/session-dialogs";
+import { useRunner, type Runner } from "@/hooks/use-runner";
+import { cn } from "@/lib/utils";
+import {
+  githubPullRequestURL,
+  parseDiff,
+  type ChangedFile,
+} from "@/lib/editor";
+import { agentNames, isActive, stateNames } from "@/lib/types";
+function IconButton({
+  icon: Icon,
+  label,
+  onClick,
+  pressed,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  pressed?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={pressed ? "secondary" : "ghost"}
+          size="icon-sm"
+          aria-label={label}
+          aria-pressed={pressed}
+          onClick={onClick}
+        >
+          <Icon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+function SessionSidebar({
+  runner,
+  files,
+  activePath,
+  openFile,
+  newSession,
+  settings,
+  close,
+}: {
+  runner: Runner;
+  files: ChangedFile[];
+  activePath: string | null;
+  openFile: (path: string) => void;
+  newSession: () => void;
+  settings: () => void;
+  close: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const matches = runner.runs.filter((run) =>
+    `${run.repository} ${agentNames[run.agent]} ${run.id}`
+      .toLocaleLowerCase()
+      .includes(search.toLocaleLowerCase()),
+  );
+  return (
+    <aside className="session-sidebar" aria-label="Sesiones y archivos">
+      <div className="panel-heading">
+        <h2>Explorador</h2>
+        <IconButton
+          icon={PanelLeftClose}
+          label="Ocultar sesiones"
+          onClick={close}
+        />
+      </div>
+      <div className="sidebar-actions">
+        <Button variant="outline" className="w-full" onClick={newSession}>
+          <Plus data-icon="inline-start" />
+          Nueva sesión
+        </Button>
+        <label className="session-search">
+          <Search aria-hidden="true" className="size-3.5" />
+          <Input
+            aria-label="Buscar sesiones"
+            placeholder="Buscar sesiones…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="section-heading">
+        <ChevronDown className="size-3.5" />
+        <h3>Sesiones recientes</h3>
+        <Badge variant="secondary">{runner.runs.length}</Badge>
+      </div>
+      <div className="session-list">
+        <nav aria-label="Sesiones recientes">
+          {matches.map((run) => (
+            <Button
+              key={run.id}
+              variant={runner.selected?.id === run.id ? "secondary" : "ghost"}
+              className="session-entry"
+              onClick={() => runner.activate(run.id)}
+              aria-current={runner.selected?.id === run.id ? "page" : undefined}
+            >
+              <span
+                className={cn(
+                  "session-indicator",
+                  isActive(run.state) && "is-working",
+                )}
+                aria-hidden="true"
+              />
+              <span className="session-entry-copy">
+                <strong className="truncate">
+                  {run.repository
+                    .replace("https://github.com/", "")
+                    .replace(/\.git$/, "")}
+                </strong>
+                <span>
+                  {agentNames[run.agent]}
+                  <span className="entry-separator" />
+                  {stateNames[run.state]}
+                </span>
+              </span>
+            </Button>
+          ))}
+          {!matches.length ? (
+            <p className="sidebar-empty">
+              {search
+                ? "No hay sesiones que coincidan."
+                : "Tus sesiones aparecerán aquí."}
+            </p>
+          ) : null}
+        </nav>
+      </div>
+      <Separator />
+      <div className="section-heading">
+        <ChevronDown className="size-3.5" />
+        <h3>Cambios del repositorio</h3>
+        <Badge variant="secondary">{files.length}</Badge>
+      </div>
+      <nav className="changed-files" aria-label="Archivos modificados">
+        {files.map((file) => (
+          <Button
+            key={file.path}
+            variant={activePath === file.path ? "secondary" : "ghost"}
+            className="file-entry"
+            onClick={() => openFile(file.path)}
+            title={file.path}
+          >
+            <FileCode2 data-icon="inline-start" />
+            <span className="truncate">{file.path}</span>
+            <span className={cn("file-status", `status-${file.status}`)}>
+              {file.status}
+            </span>
+          </Button>
+        ))}
+        {!files.length ? (
+          <p className="sidebar-empty">
+            Los archivos aparecerán cuando el agente haga cambios.
+          </p>
+        ) : null}
+      </nav>
+      <div className="sidebar-bottom">
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          onClick={settings}
+        >
+          <Github data-icon="inline-start" />
+          {runner.github?.connected
+            ? runner.github.accounts.join(", ")
+            : "Conectar GitHub"}
+          <ChevronRight data-icon="inline-end" />
+        </Button>
+        <div className="sidebar-caption">
+          <Cloud className="size-3.5" />
+          Sesiones en Cloudflare Sandbox
+        </div>
+      </div>
+    </aside>
+  );
+}
+const DiffPane = memo(function DiffPane({ file }: { file: ChangedFile }) {
+  return (
+    <div
+      className="code-scroll"
+      tabIndex={0}
+      aria-label={`Diff de ${file.path}`}
+    >
+      <div className="code-lines">
+        {file.lines.slice(0, 5000).map((line, index) => (
+          <div key={index} className={cn("code-line", `line-${line.kind}`)}>
+            <span className="line-number" aria-hidden="true">
+              {line.before || ""}
+            </span>
+            <span className="line-number" aria-hidden="true">
+              {line.after || ""}
+            </span>
+            <code>{line.text || " "}</code>
+          </div>
+        ))}
+      </div>
+      {file.lines.length > 5000 ? (
+        <p className="code-limit">
+          Mostrando las primeras 5000 líneas. Descarga el patch para revisar el
+          archivo completo.
+        </p>
+      ) : null}
+    </div>
+  );
+});
+function ActivityPanel({
+  runner,
+  expanded,
+  toggle,
+}: {
+  runner: Runner;
+  expanded: boolean;
+  toggle: () => void;
+}) {
+  const [follow, setFollow] = useState(true);
+  return (
+    <section
+      className={cn("activity-panel", !expanded && "collapsed")}
+      aria-label="Actividad de herramientas"
+    >
+      <div className="panel-heading">
+        <span className="activity-heading">
+          <SquareTerminal className="size-3.5" />
+          Actividad<Badge variant="secondary">{runner.activityCount}</Badge>
+        </span>
+        <div className="flex items-center gap-1">
+          <span className="stream-label" role="status">
+            {runner.streamState || "Sin ejecución"}
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={follow}
+            onClick={() => {
+              setFollow((value) => !value);
+              runner.followRef.current = !follow;
+            }}
+          >
+            {follow ? "Siguiendo" : "Pausado"}
+          </Button>
+          <IconButton
+            icon={expanded ? ChevronDown : PanelBottom}
+            label={expanded ? "Ocultar actividad" : "Mostrar actividad"}
+            onClick={toggle}
+          />
+        </div>
+      </div>
+      <div className="activity-scroll" hidden={!expanded}>
+        <div
+          className="activity-output"
+          ref={runner.activityRef}
+          tabIndex={0}
+          aria-label="Logs de ejecución"
+        />
+      </div>
+    </section>
+  );
+}
+function Workspace({
+  runner,
+  files,
+  activePath,
+  setActivePath,
+  newSession,
+  publish,
+  logsExpanded,
+  setLogsExpanded,
+}: {
+  runner: Runner;
+  files: ChangedFile[];
+  activePath: string | null;
+  setActivePath: (path: string) => void;
+  newSession: () => void;
+  publish: () => void;
+  logsExpanded: boolean;
+  setLogsExpanded: (value: boolean) => void;
+}) {
+  const file = files.find((item) => item.path === activePath) || files[0];
+  const additions = files.reduce((sum, item) => sum + item.added, 0),
+    deletions = files.reduce((sum, item) => sum + item.removed, 0);
+  const prURL = runner.proposal?.pr
+    ? githubPullRequestURL(runner.proposal.pr.url)
+    : null;
+  function download() {
+    const url = URL.createObjectURL(
+      new Blob([runner.diff], { type: "text/plain;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${runner.selected?.id || "changes"}.patch`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  return (
+    <main className="code-workspace" aria-label="Revisión de código">
+      <div className="editor-toolbar">
+        <div className="editor-breadcrumb">
+          <GitBranch className="size-3.5" />
+          <span className="truncate">
+            {runner.selected?.ref ||
+              (runner.selected
+                ? "Rama predeterminada"
+                : "Sin repositorio abierto")}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={!runner.diff}
+            onClick={download}
+          >
+            <Download data-icon="inline-start" />
+            <span className="action-label">Patch</span>
+          </Button>
+          {prURL ? (
+            <Button variant="outline" size="xs" asChild>
+              <a href={prURL} target="_blank" rel="noopener noreferrer">
+                <GitPullRequest data-icon="inline-start" />
+                PR #{runner.proposal?.pr?.number}
+                <ArrowUpRight data-icon="inline-end" />
+              </a>
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0}>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    disabled={!runner.proposal?.available}
+                    onClick={publish}
+                  >
+                    <GitPullRequest data-icon="inline-start" />
+                    Crear PR
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {runner.proposal?.reason ||
+                  "Publicar los cambios revisados en un borrador"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {runner.selected && isActive(runner.selected.state) ? (
+            <Button
+              variant="destructive"
+              size="xs"
+              onClick={() => void runner.stop()}
+              disabled={runner.stopping}
+            >
+              <Square data-icon="inline-start" />
+              {runner.stopping ? "Deteniendo…" : "Detener"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {file ? (
+        <Tabs
+          value={file.path}
+          onValueChange={setActivePath}
+          className="file-view"
+        >
+          <div className="file-tabs">
+            <TabsList variant="line" aria-label="Archivos con cambios">
+              {files.map((item) => (
+                <TabsTrigger
+                  key={item.path}
+                  value={item.path}
+                  title={item.path}
+                >
+                  <FileCode2 data-icon="inline-start" />
+                  {item.path.split("/").at(-1)}
+                  <span className={cn("file-status", `status-${item.status}`)}>
+                    {item.status}
+                  </span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          {files.map((item) => (
+            <TabsContent
+              key={item.path}
+              value={item.path}
+              className="file-content"
+            >
+              <div className="diff-heading">
+                <span className="truncate">{item.path}</span>
+                <div className="diff-stat">
+                  <span className="diff-added">+{item.added}</span>
+                  <span className="diff-removed">−{item.removed}</span>
+                  <Badge variant="outline">Solo lectura</Badge>
+                </div>
+              </div>
+              <DiffPane file={item} />
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : (
+        <>
+          <div className="file-tabs">
+            <span className="editor-tab-empty">
+              <Files className="size-3.5" />
+              Espacio de trabajo
+            </span>
+          </div>
+          <Empty className="editor-empty">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Code2 />
+              </EmptyMedia>
+              <EmptyTitle>
+                {runner.selected
+                  ? isActive(runner.selected.state)
+                    ? `Esperando cambios de ${agentNames[runner.selected.agent]}`
+                    : "Este turno no dejó cambios"
+                  : "Abre una sesión de trabajo"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {runner.selected
+                  ? "Sigue la conversación del agente y revisa su actividad. Los cambios de esta sesión aparecerán aquí."
+                  : "Pi u OpenCode trabajarán sobre un clon en la nube. Tú das la dirección y revisas cada cambio."}
+              </EmptyDescription>
+            </EmptyHeader>
+            {!runner.selected ? (
+              <EmptyContent>
+                <Button variant="outline" onClick={newSession}>
+                  <Plus data-icon="inline-start" />
+                  Nueva sesión
+                </Button>
+                <p className="workspace-shortcuts">
+                  <kbd>⌘ / Ctrl</kbd>
+                  <kbd>N</kbd>
+                  <span>Nueva sesión</span>
+                </p>
+              </EmptyContent>
+            ) : null}
+          </Empty>
+        </>
+      )}
+      <div className="changes-summary">
+        <span>
+          <FileDiff className="size-3.5" />
+          {files.length}{" "}
+          {files.length === 1 ? "archivo modificado" : "archivos modificados"}
+        </span>
+        <span className="diff-stat">
+          <span className="diff-added">+{additions}</span>
+          <span className="diff-removed">−{deletions}</span>
+          <span>contra el commit inicial</span>
+        </span>
+      </div>
+      <ActivityPanel
+        runner={runner}
+        expanded={logsExpanded}
+        toggle={() => setLogsExpanded(!logsExpanded)}
+      />
+    </main>
+  );
+}
+function AgentChat({
+  runner,
+  newSession,
+  drafts,
+}: {
+  runner: Runner;
+  newSession: () => void;
+  drafts: RefObject<Record<string, string>>;
+}) {
+  const draftKey = runner.selected?.id || "new";
+  const [draft, setDraft] = useState(() => drafts.current[draftKey] || ""),
+    [error, setError] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null),
+    formRef = useRef<HTMLFormElement>(null),
+    lastTurn = useRef(-1);
+  const active = runner.selected ? isActive(runner.selected.state) : false;
+  const chat = runner.conversation,
+    turns = chat?.turns || [];
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const next = chat?.turn || 0;
+    if (
+      next !== lastTurn.current ||
+      node.scrollHeight - node.scrollTop - node.clientHeight < 180
+    )
+      node.scrollTop = node.scrollHeight;
+    lastTurn.current = next;
+  }, [chat, runner.liveText]);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.trim()) return;
+    setError("");
+    try {
+      await runner.send(draft.trim());
+      setDraft("");
+      delete drafts.current[draftKey];
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo enviar el mensaje.",
+      );
+    }
+  }
+  return (
+    <aside className="agent-panel" aria-label="Chat del agente">
+      <div className="panel-heading">
+        <h2>
+          <MessageSquare className="size-3.5" />
+          Agente
+        </h2>
+        <div className="flex items-center gap-2">
+          {runner.selected ? (
+            <Badge variant="secondary">
+              {agentNames[runner.selected.agent]}
+            </Badge>
+          ) : null}
+          <IconButton
+            icon={Plus}
+            label="Nueva sesión de agente"
+            onClick={newSession}
+          />
+        </div>
+      </div>
+      <div className="chat-session-heading">
+        <Cloud className="size-4" />
+        <div>
+          <strong>
+            {runner.selected
+              ? "Conversación de la sesión"
+              : "Tu agente en la nube"}
+          </strong>
+          <span>
+            {runner.selected
+              ? runner.selected.id.slice(0, 18)
+              : "Pi u OpenCode, desde tu navegador"}
+          </span>
+        </div>
+        {chat?.checkpointSaved ? (
+          <Tooltip>
+            <TooltipTrigger>
+              <CloudCheck
+                className="size-4 text-muted-foreground"
+                aria-label="Contexto y cambios guardados"
+              />
+            </TooltipTrigger>
+            <TooltipContent>Contexto y cambios guardados</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+      <div
+        className="conversation-scroll"
+        ref={scrollRef}
+        tabIndex={0}
+        aria-label="Mensajes de la conversación"
+      >
+        {runner.loadingTask ? (
+          <div className="flex flex-col gap-4 p-4">
+            <Skeleton className="h-12 w-4/5 self-end" />
+            <Skeleton className="h-24 w-full" />
+            <span className="text-xs text-muted-foreground">
+              Recuperando conversación…
+            </span>
+          </div>
+        ) : turns.length ? (
+          turns.map((turn, index) => (
+            <div className="chat-turn" key={turn.id}>
+              {turn.number > 0 ? (
+                <article className="chat-user">
+                  <div className="message-label">
+                    Tú<span>Mensaje {turn.number}</span>
+                  </div>
+                  <p>{turn.prompt}</p>
+                </article>
+              ) : null}
+              <article className="chat-assistant">
+                <div className="assistant-label">
+                  <span className="agent-mark">
+                    {runner.selected?.agent === "opencode" ? "›_" : "π"}
+                  </span>
+                  <strong>{agentNames[runner.selected?.agent || "pi"]}</strong>
+                  {index === turns.length - 1 && active ? (
+                    <span className="assistant-working">
+                      <LoaderCircle className="size-3 animate-spin" />
+                      Trabajando
+                    </span>
+                  ) : null}
+                </div>
+                <p>
+                  {index === turns.length - 1 && runner.liveText !== null
+                    ? runner.liveText || "Pensando…"
+                    : turn.response ||
+                      (active
+                        ? "Revisando tu instrucción y el repositorio…"
+                        : "Sin respuesta guardada.")}
+                </p>
+              </article>
+            </div>
+          ))
+        ) : (
+          <Empty className="chat-empty">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquare />
+              </EmptyMedia>
+              <EmptyTitle>
+                {runner.selected
+                  ? "Recupera tu conversación"
+                  : "Una conversación, todo el contexto"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {runner.selected
+                  ? chat?.reason ||
+                    "Aquí aparecerán los mensajes y las respuestas de esta tarea."
+                  : "Describe una tarea, responde al agente y sigue trabajando sobre los mismos archivos."}
+              </EmptyDescription>
+            </EmptyHeader>
+            {!runner.selected ? (
+              <EmptyContent>
+                <Button variant="ghost" onClick={newSession}>
+                  Empezar una sesión
+                  <ChevronRight data-icon="inline-end" />
+                </Button>
+              </EmptyContent>
+            ) : null}
+          </Empty>
+        )}
+      </div>
+      <div className="chat-composer">
+        <div className="composer-context">
+          <span className={cn("context-dot", active && "is-working")} />
+          <span>
+            {active
+              ? "El agente está trabajando"
+              : chat?.canContinue
+                ? "Esperando tu respuesta"
+                : runner.selected
+                  ? "Conversación guardada"
+                  : "Sin sesión abierta"}
+          </span>
+        </div>
+        <form ref={formRef} onSubmit={submit}>
+          <FieldGroup>
+            <Field
+              data-disabled={
+                !runner.connected ||
+                !runner.selected ||
+                runner.sending ||
+                (!chat?.canContinue && !active)
+              }
+            >
+              <FieldLabel htmlFor="chat-message" className="sr-only">
+                Responder al agente
+              </FieldLabel>
+              <Textarea
+                id="chat-message"
+                value={draft}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  drafts.current[draftKey] = event.target.value;
+                }}
+                maxLength={32000}
+                rows={3}
+                disabled={
+                  !runner.connected ||
+                  !runner.selected ||
+                  runner.sending ||
+                  (!chat?.canContinue && !active)
+                }
+                placeholder={
+                  runner.selected
+                    ? "Responde o indica el siguiente cambio…"
+                    : "Abre una sesión para conversar…"
+                }
+                onKeyDown={(event) => {
+                  if (
+                    (event.ctrlKey || event.metaKey) &&
+                    event.key === "Enter"
+                  ) {
+                    event.preventDefault();
+                    if (!active && chat?.canContinue && !runner.sending)
+                      formRef.current?.requestSubmit();
+                  }
+                }}
+              />
+            </Field>
+          </FieldGroup>
+          <div className="composer-actions">
+            <span>
+              <span className="model-dot" />
+              Qwen 3.7 Flash
+            </span>
+            <div className="flex items-center gap-2">
+              <kbd>⌘ / Ctrl ↵</kbd>
+              <Button
+                size="icon-sm"
+                type="submit"
+                disabled={
+                  !draft.trim() ||
+                  !chat?.canContinue ||
+                  active ||
+                  runner.sending
+                }
+                aria-label="Enviar mensaje"
+              >
+                {runner.sending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <ArrowUp />
+                )}
+              </Button>
+            </div>
+          </div>
+        </form>
+        {error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        <p className="composer-hint">
+          {active
+            ? "Puedes detener la tarea para cambiar de dirección."
+            : chat?.warning ||
+              chat?.reason ||
+              (chat?.checkpointSaved
+                ? "Contexto y cambios guardados en la nube."
+                : "El agente trabaja en un entorno aislado.")}
+        </p>
+      </div>
+    </aside>
+  );
+}
+export default function App() {
+  const runner = useRunner();
+  const drafts = useRef<Record<string, string>>({});
+  useEffect(() => {
+    if (!runner.connected) drafts.current = {};
+  }, [runner.connected]);
+  const [newOpen, setNewOpen] = useState(false),
+    [settingsOpen, setSettingsOpen] = useState(false),
+    [publishOpen, setPublishOpen] = useState(false),
+    [sidebarVisible, setSidebarVisible] = useState(true),
+    [logsExpanded, setLogsExpanded] = useState(true);
+  const [activePath, setActivePath] = useState<string | null>(null),
+    [mobilePane, setMobilePane] = useState("chat");
+  const [mobile, setMobile] = useState(
+    () => matchMedia("(max-width: 900px)").matches,
+  );
+  const files = useMemo(() => parseDiff(runner.diff), [runner.diff]);
+  const newSession = () => {
+    if (!runner.connected) runner.setAuthOpen(true);
+    else setNewOpen(true);
+  };
+  useEffect(() => {
+    const query = matchMedia("(max-width: 900px)");
+    const change = () => setMobile(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    setActivePath(null);
+  }, [runner.selected?.id]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        if (runner.connected) setNewOpen(true);
+        else runner.setAuthOpen(true);
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [runner.connected, runner.setAuthOpen]);
+  const openFile = (path: string) => {
+    setActivePath(path);
+    if (mobile) setMobilePane("changes");
+  };
+  const sidebar = (
+    <SessionSidebar
+      runner={runner}
+      files={files}
+      activePath={activePath || files[0]?.path || null}
+      openFile={openFile}
+      newSession={newSession}
+      settings={() =>
+        runner.connected ? setSettingsOpen(true) : runner.setAuthOpen(true)
+      }
+      close={() => setSidebarVisible(false)}
+    />
+  );
+  const workspace = (
+    <Workspace
+      runner={runner}
+      files={files}
+      activePath={activePath}
+      setActivePath={setActivePath}
+      newSession={newSession}
+      publish={() => setPublishOpen(true)}
+      logsExpanded={logsExpanded}
+      setLogsExpanded={setLogsExpanded}
+    />
+  );
+  const agent = (
+    <AgentChat
+      key={runner.selected?.id || "new"}
+      runner={runner}
+      newSession={newSession}
+      drafts={drafts}
+    />
+  );
+  return (
+    <TooltipProvider>
+      <div className="editor-shell">
+        <header className="titlebar">
+          <div className="brand">
+            <span className="brand-mark">
+              <Code2 className="size-4" />
+            </span>
+            <strong>Sandbox</strong>
+            <span className="brand-divider" />
+            <span className="brand-subtitle">Workspace</span>
+          </div>
+          <div className="titlebar-project">
+            <Cloud className="size-3.5" />
+            <span className="truncate">
+              {runner.selected?.repository
+                .replace("https://github.com/", "")
+                .replace(/\.git$/, "") || "Editor en la nube"}
+            </span>
+          </div>
+          <div className="titlebar-actions">
+            <Badge variant="outline">
+              <Cloud className="size-3" />
+              Cloudflare
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                runner.connected
+                  ? void runner.logout().catch(runner.report)
+                  : runner.setAuthOpen(true)
+              }
+            >
+              <span
+                className={cn(
+                  "connection-dot",
+                  runner.connected && "connected",
+                )}
+              />
+              {runner.checking
+                ? "Conectando…"
+                : runner.connected
+                  ? "Conectado · salir"
+                  : "Conectar"}
+            </Button>
+          </div>
+        </header>
+        {runner.notice ? (
+          <Alert className="workspace-notice">
+            <CircleHelp />
+            <AlertDescription>{runner.notice}</AlertDescription>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Cerrar aviso"
+              onClick={() => runner.setNotice("")}
+            >
+              <X />
+            </Button>
+          </Alert>
+        ) : null}
+        <div className="editor-body">
+          <nav className="activity-rail" aria-label="Paneles del espacio">
+            <IconButton
+              icon={Files}
+              label="Sesiones y cambios"
+              pressed={sidebarVisible}
+              onClick={() => {
+                setSidebarVisible((value) => !value);
+                setMobilePane("sessions");
+              }}
+            />
+            <IconButton
+              icon={MessageSquare}
+              label="Conversación del agente"
+              onClick={() => {
+                if (mobile) setMobilePane("chat");
+                else document.getElementById("chat-message")?.focus();
+              }}
+            />
+            <IconButton
+              icon={SquareTerminal}
+              label="Actividad de herramientas"
+              pressed={logsExpanded}
+              onClick={() => {
+                setLogsExpanded((value) => !value);
+                if (mobile) {
+                  setMobilePane("changes");
+                  if (runner.selected) runner.activate(runner.selected.id);
+                }
+              }}
+            />
+            <div className="rail-spacer" />
+            <IconButton
+              icon={Settings2}
+              label="Configurar espacio"
+              onClick={() =>
+                runner.connected
+                  ? setSettingsOpen(true)
+                  : runner.setAuthOpen(true)
+              }
+            />
+          </nav>
+          {mobile ? (
+            <div className="mobile-workspace">
+              <ToggleGroup
+                type="single"
+                value={mobilePane}
+                onValueChange={(value) => {
+                  if (value) {
+                    setMobilePane(value);
+                    if (value === "changes" && runner.selected)
+                      runner.activate(runner.selected.id);
+                  }
+                }}
+                aria-label="Vista del espacio"
+                variant="outline"
+                spacing={0}
+              >
+                <ToggleGroupItem value="sessions">
+                  <Files data-icon="inline-start" />
+                  Sesiones
+                </ToggleGroupItem>
+                <ToggleGroupItem value="changes">
+                  <FileDiff data-icon="inline-start" />
+                  Cambios
+                </ToggleGroupItem>
+                <ToggleGroupItem value="chat">
+                  <MessageSquare data-icon="inline-start" />
+                  Chat
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <div className="mobile-pane">
+                {mobilePane === "sessions"
+                  ? sidebar
+                  : mobilePane === "changes"
+                    ? workspace
+                    : agent}
+              </div>
+            </div>
+          ) : (
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className="editor-panels"
+            >
+              {sidebarVisible ? (
+                <>
+                  <ResizablePanel
+                    id="sessions"
+                    defaultSize="20%"
+                    minSize="190px"
+                    maxSize="360px"
+                  >
+                    {sidebar}
+                  </ResizablePanel>
+                  <ResizableHandle />
+                </>
+              ) : null}
+              <ResizablePanel
+                id="workspace"
+                defaultSize={sidebarVisible ? "47%" : "64%"}
+                minSize="320px"
+              >
+                {workspace}
+              </ResizablePanel>
+              <ResizableHandle />
+              <ResizablePanel
+                id="agent"
+                defaultSize={sidebarVisible ? "33%" : "36%"}
+                minSize="310px"
+              >
+                {agent}
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          )}
+        </div>
+        <footer className="statusbar">
+          <div>
+            <Cloud className="size-3.5" />
+            <span>
+              {runner.connected ? "Cloudflare Sandbox" : "Conecta tu espacio"}
+            </span>
+            {runner.selected ? (
+              <>
+                <span className="statusbar-divider" />
+                <GitBranch className="size-3" />
+                <span>{runner.selected.ref || "Rama predeterminada"}</span>
+              </>
+            ) : null}
+          </div>
+          <div>
+            {runner.selected ? (
+              <span>
+                {agentNames[runner.selected.agent]} /{" "}
+                {stateNames[runner.selected.state]}
+              </span>
+            ) : (
+              <span>Entorno por sesión</span>
+            )}
+            <span className="statusbar-divider" />
+            <span>
+              {runner.conversation?.checkpointSaved
+                ? "Contexto guardado"
+                : "Hasta 30 min por respuesta"}
+            </span>
+          </div>
+        </footer>
+        <AuthDialog runner={runner} />
+        {runner.connected ? (
+          <>
+            <NewSessionDialog
+              runner={runner}
+              open={newOpen}
+              onOpenChange={setNewOpen}
+            />
+            <SettingsDialog
+              runner={runner}
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
+            />
+            <PublishDialog
+              runner={runner}
+              open={publishOpen}
+              onOpenChange={setPublishOpen}
+            />
+          </>
+        ) : null}
+      </div>
+    </TooltipProvider>
+  );
+}

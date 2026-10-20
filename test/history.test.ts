@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error Browser modules are plain JavaScript.
-import { historyForStorage, recoveredRun } from '../public/run-history.js';
+import { historyForStorage, recoveredRun } from '../web/lib/run-history.js';
 const id = 'pi-c1b27699-7c4d-47c3-8196-cc624194d6de';
 test('private runs survive reload without persisting repository details, instructions, logs or credentials', () => {
   const run = { id, agent: 'pi', private: true, repository: 'https://github.com/owner/secret-project.git', ref: 'secret-branch', prompt: 'confidential task', token: 'sensitive-credential', stdout: 'private-code', startedAt: 1000, state: 'running' };

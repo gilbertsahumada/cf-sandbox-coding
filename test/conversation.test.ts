@@ -145,3 +145,18 @@ test('large Unicode prompts and responses round-trip without exceeding individua
   await f.sandbox.startTask(prompt, 'pi'); f.complete(response);
   const chat = await f.sandbox.conversation(); assert.equal(chat.turns[0].prompt, prompt); assert.equal(chat.turns[0].response, response);
 });
+
+
+test('compiled UI and self-hosted fonts remain public while task data stays protected', async () => {
+  const fetched: string[] = [];
+  const env = { RUNNER_API_TOKEN: 'test-runner', ASSETS: { fetch: async (request: Request) => { fetched.push(new URL(request.url).pathname); return new Response('static'); } } };
+  for (const path of ['/', '/favicon.svg', '/assets/index-hash.js', '/assets/font-hash.woff2']) {
+    const response = await handler.fetch(new Request(`https://runner.test${path}`), env);
+    assert.equal(response.status, 200);
+    const csp = response.headers.get('content-security-policy')!;
+    assert.ok(csp.includes("font-src 'self'")); assert.ok(!csp.includes('unsafe-inline'));
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  }
+  for (const path of ['/sandboxes/pi-private/diff', '/sandboxes/pi-private/messages', '/.dev.vars', '/assets/../.dev.vars']) assert.equal((await handler.fetch(new Request(`https://runner.test${path}`), env)).status, 401);
+  assert.equal(fetched.length, 4);
+});

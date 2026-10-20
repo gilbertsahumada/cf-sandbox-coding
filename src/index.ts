@@ -41,10 +41,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (['/github/manifest/callback', '/github/install/callback'].includes(path) && request.method === 'GET') return githubCallback(request, env);
-    if (["/", "/app.js", "/run-history.js", "/activity.js", "/chat.js", "/styles.css", "/favicon.svg"].includes(path) && ["GET", "HEAD"].includes(request.method)) {
+    if ((["/", "/favicon.svg"].includes(path) || /^\/assets\/[a-zA-Z0-9._/-]+$/.test(path)) && ["GET", "HEAD"].includes(request.method)) {
       const response = await env.ASSETS.fetch(request);
       const headers = new Headers(response.headers);
-      headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com");
+      headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com");
       headers.set("x-content-type-options", "nosniff");
       headers.set("referrer-policy", "no-referrer");
       headers.set("cache-control", "no-cache");
