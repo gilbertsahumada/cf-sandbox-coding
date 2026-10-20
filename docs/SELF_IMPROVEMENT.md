@@ -7,10 +7,10 @@ Repositorio: https://github.com/gilbertsahumada/cf-sandbox-coding
 1. Autoriza este repositorio en la GitHub App del runner cuando la conexión esté funcionando.
 2. En la interfaz elige este repositorio, Pi u OpenCode y una tarea acotada.
 3. El agente trabaja sobre un clon aislado y devuelve sus logs, explicación y patch.
-4. Revisa el patch y aplícalo en una rama del repositorio. Ejecuta las comprobaciones y abre un pull request.
+4. Revisa los cambios y pulsa **Crear PR** para publicar una rama y un borrador desde el Worker. Describe las pruebas realizadas; ejecuta las comprobaciones antes de incorporar la propuesta.
 5. Incorpora los cambios y despliega después de revisarlos. La siguiente tarea clonará la versión actualizada.
 
-La integración actual tiene permisos de lectura. Todavía no abre pull requests desde la interfaz ni inicia mejoras periódicas. GitHub Actions verifica los commits y pull requests sin credenciales del modelo o de Cloudflare.
+La clonación y la red del agente mantienen permisos de lectura. El botón **Crear PR** requiere aprobar Contents y Pull requests en Read and write en la GitHub App; solo el Worker recibe un token de escritura limitado al repositorio seleccionado. No hay mejoras periódicas. GitHub Actions verifica los commits y pull requests sin credenciales del modelo o de Cloudflare.
 
 ## Estado de la conexión GitHub
 
@@ -22,7 +22,6 @@ Tarea de mejora sugerida:
 
 ## Siguientes mejoras candidatas
 
-- Exportar una propuesta revisable a una rama y un pull request con permisos explícitos y mínimos.
 - Preparar dependencias de prueba en la imagen para que el agente pueda verificar este proyecto dentro del sandbox.
 - Limpiar resultados antiguos de forma configurable.
 

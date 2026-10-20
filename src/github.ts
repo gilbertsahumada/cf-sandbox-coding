@@ -1,3 +1,4 @@
+import { publishProposal, validateChanges, type Proposal, type PullRequest } from './pull-request';
 import { repositorySelection, type RepositorySelection } from './repository-selection';
 import { DurableObject } from 'cloudflare:workers';
 import { appJwt, appManifest, githubRequest, validState, type GitHubApp, type GitHubRepository, type RepositoryGrant } from './github-api';
@@ -5,6 +6,7 @@ type Flow = { state: string; expires: number; phase: 'manifest' | 'exchange' | '
 type Installation = { id: number; account: string };
 // This runner is owned by one operator. Its GitHub App identity stays server-side.
 export class GitHubConnection extends DurableObject<Env> {
+  private publishing = new Map<string, Promise<PullRequest>>();
   private tokens = new Map<string, { token: string; expires: number }>();
   async begin(origin: string) {
     const app = this.ctx.storage.kv.get<GitHubApp>('app');
@@ -64,6 +66,7 @@ export class GitHubConnection extends DurableObject<Env> {
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];
     return { connected: installations.length > 0, accounts: installations.map(item => item.account), registered: Boolean(app),
       setupPhase: this.ctx.storage.kv.get<Flow>('flow')?.phase || null, setupExpired: (this.ctx.storage.kv.get<Flow>('flow')?.expires || 0) < Date.now(), lastError: this.ctx.storage.kv.get('lastError') || null, registrationShape: this.ctx.storage.kv.get('registrationShape') || null,
+      permissionsUrl: app ? `https://github.com/settings/apps/${app.slug}/permissions` : null,
       manageUrl: app ? `https://github.com/settings/installations` : null };
   }
   async repositories(page: number) {
@@ -100,6 +103,31 @@ export class GitHubConnection extends DurableObject<Env> {
   }
   async tokenForRepository(grant: RepositoryGrant): Promise<string> {
     return this.installationToken(grant.installationId, grant.repositoryId);
+  }
+  async createPullRequest(grant: RepositoryGrant, taskId: string, proposal: Proposal, title: string, body: string): Promise<PullRequest> {
+    const key = `proposal:${grant.repositoryId}:${taskId}`;
+    const pending = this.publishing.get(key);
+    if (pending) return pending;
+    const publication = (async () => {
+      const saved = this.ctx.storage.kv.get<{ commit?: string; pr?: PullRequest }>(key) || {};
+      if (saved.pr) return saved.pr;
+      const repository = await this.repository(grant.installationId, grant.repositoryId);
+      if (repository.fullName !== grant.fullName) throw Error('El repositorio cambió de nombre. Ejecuta una tarea nueva.');
+      validateChanges(proposal);
+      let token: string;
+      try {
+        const result = await githubRequest(`/app/installations/${grant.installationId}/access_tokens`, appJwt(this.app()), {
+          repository_ids: [grant.repositoryId], permissions: { contents: 'write', pull_requests: 'write' },
+        });
+        token = result.token;
+      } catch { throw Error('Habilita Contents y Pull requests en Read and write en la configuración de la GitHub App y aprueba los nuevos permisos en su instalación.'); }
+      const pr = await publishProposal((path, payload, method) => githubRequest(path, token, payload, method), repository.fullName, taskId,
+        proposal, title, body, saved, value => this.ctx.storage.kv.put(key, value));
+      this.ctx.storage.kv.put(key, { pr });
+      return pr;
+    })();
+    this.publishing.set(key, publication);
+    try { return await publication; } finally { this.publishing.delete(key); }
   }
   async disconnect() {
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];

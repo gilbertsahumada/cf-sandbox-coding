@@ -11,3 +11,5 @@ COPY container/follow-task.mjs /opt/follow-task.mjs
 COPY container/stop-task.mjs /opt/stop-task.mjs
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
+
+COPY container/export-changes.mjs /opt/export-changes.mjs

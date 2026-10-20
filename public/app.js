@@ -21,7 +21,7 @@ function saveHistory() { try { localStorage.setItem('sandbox-runs', JSON.stringi
 function showNotice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 function setConnected(value) {
   connected = value;
-  if (!value) closeLive();
+  if (!value) { closeLive(); $('create-pr').hidden = true; $('view-pr').hidden = true; if ($('pr-dialog').open) $('pr-dialog').close(); $('pr-title').value = ''; $('pr-description').value = ''; $('view-pr').removeAttribute('href'); }
   $('connection').classList.toggle('connected', value);
   $('connection-label').textContent = value ? 'Conectado · salir' : 'Conectar';
   updateSubmit();
@@ -76,6 +76,7 @@ function renderHistory() {
   }
 }
 function state(run) {
+  if (['cloning', 'running', 'stopping', 'none'].includes(run.state)) { $('create-pr').hidden = true; $('view-pr').hidden = true; }
   const stopping = run.state === 'stopping' || stoppingTasks.has(run.id);
   $('stop-task').hidden = !connected || !['running', 'stopping'].includes(run.state);
   $('stop-task').disabled = stopping;
@@ -127,6 +128,7 @@ $('download-diff').addEventListener('click', () => { const url = URL.createObjec
 async function selectRun(run) {
   closeLive();
   selected = run; const ticket = ++generation;
+  $('create-pr').hidden = true; $('view-pr').hidden = true;
   const page = new URL(window.location.href); page.searchParams.set('task', run.id); window.history.replaceState(null, '', page);
   $('workspace-title').textContent = run.repository.replace('https://github.com/', ''); $('run-meta').hidden = false; $('run-agent').textContent = names[run.agent]; $('run-repository').textContent = run.ref || 'Rama predeterminada'; $('run-time').textContent = elapsed(run); $('progress').hidden = false; $('result').hidden = true;
   showNotice(''); state(run); renderDiff(''); let view = activity('', '', run);
@@ -167,7 +169,7 @@ async function selectRun(run) {
   });
   stream.addEventListener('done', () => {
     if (!current()) return;
-    completed = true; terminal = true; view.finish(); stream.close();
+    completed = true; terminal = true; view.finish(); stream.close(); void refreshPullRequest(run);
     updateStream(run.state === 'cancelled' ? 'Tarea detenida' : 'Actividad guardada');
     queueDiff(true);
   });
@@ -213,7 +215,7 @@ $('task-form').addEventListener('submit', async event => {
     run.state = 'running'; busy = false; saveHistory(); updateSubmit(); selectRun(run);
   } catch (error) { run.state = 'failed'; run.finishedAt = Date.now(); busy = false; state(run); showNotice(error.message); activity('', error.message, run); }
 });
-$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); closeLive(); generation++; selected = null; $('stop-task').hidden = true; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running', 'stopping'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
+$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); closeLive(); generation++; selected = null; $('create-pr').hidden = true; $('view-pr').hidden = true; $('stop-task').hidden = true; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running', 'stopping'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
 $('example').addEventListener('click', () => { if (![...$('repository').options].some(option => option.value === 'https://github.com/octocat/Hello-World')) { const option = document.createElement('option'); option.value = 'https://github.com/octocat/Hello-World'; option.textContent = 'Público · octocat/Hello-World (ejemplo)'; $('repository').append(option); } $('repository').disabled = false; $('repository').value = 'https://github.com/octocat/Hello-World'; $('prompt').value = 'Crea un archivo NOTES.md con un breve resumen del repositorio. Comprueba que el archivo existe. No hagas commit.'; $('prompt').focus(); });
 
 let repositories = [];
@@ -277,7 +279,7 @@ async function refreshGitHub() {
     if (ticket !== githubGeneration || !connected) return;
     if (!response.connected) { clearGitHub(); return; }
     $('github-status').textContent = response.accounts.join(', ');
-    $('github-description').textContent = 'Acceso de lectura a los repositorios autorizados.';
+    $('github-description').textContent = 'Repositorios autorizados para tareas y propuestas de cambios.';
     $('github-connect').hidden = true; $('github-actions').hidden = false;
     await loadRepositories(false, ticket);
   } catch (error) { if (ticket === githubGeneration) githubError(error.message); }
@@ -325,3 +327,38 @@ renderHistory();
   try { const response = await fetch('/session', { cache: 'no-store', credentials: 'same-origin' }); setConnected(response.ok); } catch { setConnected(false); showNotice('No pudimos comprobar la conexión con el runner.'); }
   if (history.length) selectRun(history[0]);
 })();
+
+let publishingTask = null;
+async function refreshPullRequest(run) {
+  if (!connected || selected?.id !== run.id) return;
+  try {
+    const info = await (await api(`/sandboxes/${run.id}/pull-request`)).json();
+    if (!connected || selected?.id !== run.id) return;
+    $('view-pr').hidden = !info.pr; $('create-pr').hidden = Boolean(info.pr);
+    $('create-pr').disabled = !info.available; $('create-pr').title = info.reason || 'Publicar los cambios revisados en un PR en borrador';
+    if (info.pr) { $('view-pr').href = info.pr.url; $('view-pr').textContent = `Ver PR #${info.pr.number}`; }
+    else if (!info.available) { $('create-pr').hidden = false; showNotice(info.reason); }
+  } catch (error) { if (selected?.id === run.id) showNotice(error.message); }
+}
+$('create-pr').addEventListener('click', async () => {
+  if (!connected || !selected || $('create-pr').disabled) return;
+  publishingTask = selected;
+  $('pr-title').value = `Apply ${names[selected.agent]} task changes`;
+  $('pr-description').value = ''; $('pr-error').hidden = true; $('pr-submit').disabled = false;
+  $('pr-permissions').hidden = true; $('pr-dialog').showModal();
+  try {
+    const status = await (await api('/github/status')).json();
+    if (status.permissionsUrl) { $('pr-permissions').href = status.permissionsUrl; $('pr-permissions').hidden = false; }
+  } catch {}
+});
+$('pr-cancel').addEventListener('click', () => $('pr-dialog').close());
+$('pr-form').addEventListener('submit', async event => {
+  event.preventDefault(); const run = publishingTask;
+  if (!connected || !run || $('pr-submit').disabled) return;
+  $('pr-submit').disabled = true; $('pr-submit').textContent = 'Creando PR…'; $('pr-error').hidden = true;
+  try {
+    await api(`/sandboxes/${run.id}/pull-request`, { title: $('pr-title').value.trim(), description: $('pr-description').value.trim() });
+    $('pr-dialog').close(); await refreshPullRequest(run);
+  } catch (error) { $('pr-error').textContent = error.message; $('pr-error').hidden = false; }
+  finally { $('pr-submit').disabled = false; $('pr-submit').textContent = 'Crear PR en borrador'; }
+});
