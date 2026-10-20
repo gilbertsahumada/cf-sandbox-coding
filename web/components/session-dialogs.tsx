@@ -1,7 +1,8 @@
 import { AgentLogo } from "./agent-logo";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
+  Check,
   Cloud,
   GitFork as Github,
   LockKeyhole,
@@ -37,15 +38,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import type { Runner } from "@/hooks/use-runner";
 import { agentNames, type Agent } from "@/lib/types";
+import { Skeleton } from "./ui/skeleton";
+const RepositorySelect = lazy(() => import("./repository-select"));
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -228,12 +228,15 @@ export function NewSessionDialog({
                 <ToggleGroupItem value="pi" aria-label="Pi">
                   <AgentLogo agent="pi" data-icon="inline-start" />
                   Pi
+                  {agent === "pi" ? <Check data-icon="inline-end" aria-hidden="true" /> : null}
                 </ToggleGroupItem>
                 <ToggleGroupItem value="opencode" aria-label="OpenCode">
                   <AgentLogo agent="opencode" data-icon="inline-start" />
                   OpenCode
+                  {agent === "opencode" ? <Check data-icon="inline-end" aria-hidden="true" /> : null}
                 </ToggleGroupItem>
               </ToggleGroup>
+              <FieldDescription role="status">Selected agent: {agentNames[agent]}</FieldDescription>
             </Field>
             {!runner.github?.connected && !example ? (
               <Alert>
@@ -268,44 +271,18 @@ export function NewSessionDialog({
                     <FolderGit2 aria-hidden="true" />
                     Repository
                   </FieldLabel>
-                  <NativeSelect
-                    id="repo-select"
-                    className="w-full"
-                    value={example ? "example" : runner.repository?.url || ""}
-                    disabled={runner.catalogBusy && !options.length}
-                    onChange={(event) => {
-                      const repo = runner.repositories.find(
-                        (item) => item.url === event.target.value,
-                      );
-                      if (repo) {
+                  <Suspense fallback={<Skeleton className="h-8 w-full" aria-label="Loading repository selector" role="status" />}>
+                    <RepositorySelect
+                      selected={runner.repository}
+                      options={options}
+                      example={example}
+                      disabled={runner.catalogBusy && !options.length}
+                      onSelect={repo => {
                         setExample(false);
                         runner.chooseRepository(repo);
-                      }
-                    }}
-                    required
-                  >
-                    <NativeSelectOption value="">
-                      Select a repository
-                    </NativeSelectOption>
-                    {runner.repository &&
-                    !options.some(
-                      (repo) => repo.url === runner.repository?.url,
-                    ) ? (
-                      <NativeSelectOption value={runner.repository.url}>
-                        {runner.repository.fullName}
-                      </NativeSelectOption>
-                    ) : null}
-                    {options.map((repo) => (
-                      <NativeSelectOption key={repo.url} value={repo.url}>
-                        {repo.private ? "Private" : "Public"} · {repo.fullName}
-                      </NativeSelectOption>
-                    ))}
-                    {example ? (
-                      <NativeSelectOption value="example">
-                        octocat/Hello-World
-                      </NativeSelectOption>
-                    ) : null}
-                  </NativeSelect>
+                      }}
+                    />
+                  </Suspense>
                   <FieldDescription>
                     {runner.catalogBusy ? (
                       <span
@@ -384,8 +361,7 @@ export function NewSessionDialog({
                 placeholder="Describe the change, the expected result, and the checks to run…"
               />
               <FieldDescription>
-                This session runs with Qwen. Continue sending instructions in
-                its chat.
+                {agentNames[agent]} will run with Qwen. Continue sending instructions in its chat.
               </FieldDescription>
             </Field>
             <FormError error={error} />

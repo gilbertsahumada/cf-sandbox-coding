@@ -4,6 +4,7 @@ import React, {
   memo,
   useEffect,
   useRef,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -11,6 +12,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { codeLanguage, highlightCode } from "@/lib/code-highlight";
 const plugins = [remarkGfm];
 function textOf(node: ReactNode): string {
   return Children.toArray(node)
@@ -29,12 +31,15 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timeout.current), []);
   const child = Children.toArray(children)[0];
-  const language = isValidElement<{ className?: string }>(child)
+  const hint = isValidElement<{ className?: string }>(child)
     ? child.props.className?.replace("language-", "")
-    : null;
+    : undefined;
+  const source = textOf(children);
+  const language = useMemo(() => codeLanguage(source, hint), [source, hint]);
+  const tokens = useMemo(() => highlightCode(source, language), [source, language]);
   async function copy() {
     try {
-      await navigator.clipboard.writeText(textOf(children).replace(/\n$/, ""));
+      await navigator.clipboard.writeText(source.replace(/\n$/, ""));
       setCopied(true);
       setError(false);
       clearTimeout(timeout.current);
@@ -46,7 +51,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   return (
     <div className="response-code">
       <div className="response-code-heading">
-        <span>{language || "code"}</span>
+        <span>{language}</span>
         <Button
           type="button"
           variant="ghost"
@@ -62,7 +67,9 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           {copied ? "Copied" : error ? "Copy failed" : "Copy"}
         </Button>
       </div>
-      <pre>{children}</pre>
+      <pre><code className={`language-${language}`}>{tokens.map((token, index) =>
+        token.className ? <span key={index} className={token.className}>{token.text}</span> : token.text,
+      )}</code></pre>
     </div>
   );
 }

@@ -260,3 +260,10 @@ Local verification uses simulated API responses for explorer navigation, retaine
 ### Browser annotations in the simulated preview
 
 The local `preview:editor` fixture allows inline style elements so Codex Annotate can draw its selection overlay. The diagnostic comparison confirmed that `style-src-elem` blocked those injected styles under the strict policy. Script execution remains restricted to the same origin; the fixture uses fake credentials and simulated APIs. The deployed Worker's CSP retains its nonce-based style policy. This exception belongs only to the simulated preview.
+
+
+### Response code and session controls
+
+Agent response fences highlight JavaScript, TypeScript, JSX and TSX using the same parser family as the source editor. Declared language aliases are normalized; plain-text or unlabelled fences use conservative code detection, leaving unsupported languages as literal text. Highlighting preserves the source text and renders escaped React nodes. The new-session form shows an explicit selection check and agent name. Its repository menu uses shadcn Select, retaining the loaded-repository search, pagination and remembered choice.
+
+Verification for these controls uses the simulated preview: switching Pi/OpenCode changes the checked radio and selection label; starting an OpenCode fixture task confirms the selected agent reaches the request. Repository selection, search filtering and loading the complete catalog were checked in the custom menu. No real model task was started for these checks.

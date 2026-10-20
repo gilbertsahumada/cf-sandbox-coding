@@ -1462,3 +1462,12 @@ a {
   object-fit: contain;
   flex: none;
 }
+
+
+/* Syntax colors describe code tokens; the surrounding UI remains neutral. */
+.response-code .tok-keyword { color: #c6b7d5; }
+.response-code .tok-string, .response-code .tok-string2 { color: #b7c7b0; }
+.response-code .tok-number, .response-code .tok-bool, .response-code .tok-null { color: #d4bd9d; }
+.response-code .tok-typeName, .response-code .tok-className, .response-code .tok-tagName { color: #acc0cd; }
+.response-code .tok-comment { color: #87909e; }
+.response-code .tok-variableName, .response-code .tok-propertyName { color: #d2d7df; }
