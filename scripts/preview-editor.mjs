@@ -5,6 +5,8 @@ import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
 const slow = process.argv.includes("--slow");
+const slowStart = process.argv.includes("--slow-start");
+const failStart = process.argv.includes("--fail-start");
 let authenticated = true,
   github = true,
   pageLoads = [],
@@ -190,6 +192,8 @@ createServer(async (req, res) => {
     const [, id, resource] = match;
     let task = tasks.get(id);
     if (resource === "repository") {
+      if (slowStart) await new Promise(resolve => setTimeout(resolve, 8000));
+      if (failStart) return json({ message: "Preview: repository preparation failed. Your instruction is preserved." }, 503);
       tasks.set(id, {
         files: new Map(seedFiles),
         agent: id.startsWith("pi") ? "pi" : "opencode",
@@ -199,7 +203,7 @@ createServer(async (req, res) => {
       });
       return json({ exitCode: 0 }, 201);
     }
-    if (!task) return json({ state: "none" });
+    if (!task) return ["files", "file"].includes(resource) ? json({ message: "This session has no prepared repository." }, 409) : json({ state: "none" });
     if (resource === "files" || resource === "file") {
       task.files ||= new Map(seedFiles);
       const path = url.searchParams.get("path") || "";
@@ -276,6 +280,7 @@ createServer(async (req, res) => {
       });
     }
     if (resource === "task" && req.method === "POST") {
+      if (slowStart) await new Promise(resolve => setTimeout(resolve, 4000));
       let body = "";
       for await (const chunk of req) body += chunk;
       const data = JSON.parse(body);
@@ -360,6 +365,8 @@ createServer(async (req, res) => {
       res.write(
         `event: turn\ndata: {"turn":${turn}}\n\nevent: status\ndata: ${JSON.stringify({ state: task.state })}\n\n`,
       );
+      const archived = task.state !== "running";
+      if (archived) res.write('event: reset\ndata: {"archived":true}\n\n');
       const events = [
         {
           type: "tool_execution_start",
@@ -381,7 +388,7 @@ createServer(async (req, res) => {
         },
       ];
       res.write(
-        `id: 100:0\nevent: stdout\ndata: ${JSON.stringify(events.map((event) => JSON.stringify(event)).join("\n") + "\n")}\n\n`,
+        `id: 100:0\nevent: stdout\ndata: ${JSON.stringify((archived ? 'truncated-leading-event\n' : '') + events.map((event) => JSON.stringify(event)).join("\n") + "\n")}\n\n`,
       );
       const complete = () => {
         res.write(

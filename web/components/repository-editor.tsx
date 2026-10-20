@@ -1,3 +1,4 @@
+import { startupText } from "@/lib/session-start";
 import { lazy, Suspense, useState } from "react";
 import {
   Save,
@@ -54,6 +55,7 @@ export function RepositoryEditor({
       setDiscard({ path: doc.path, reload: true });
     else void workspace.open(doc.path, true);
   }
+  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
   const blocked = Boolean(runner.selected && isActive(runner.selected.state));
   return (
     <Tabs value={doc?.path || ""} onValueChange={path=>void workspace.open(path)} className="repository-editor">
@@ -191,12 +193,11 @@ export function RepositoryEditor({
         <Empty className="editor-empty">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <FileCode2 />
+              {startup && startup.stage !== "failed" ? <Spinner /> : <FileCode2 />}
             </EmptyMedia>
-            <EmptyTitle>Open a file</EmptyTitle>
+            <EmptyTitle>{startup ? startup.stage === "failed" ? "Workspace unavailable" : "Preparing workspace" : "Open a file"}</EmptyTitle>
             <EmptyDescription>
-              Browse the repository on the left. Your edits are saved to this
-              cloud session.
+              {startup ? startupText(startup) : "Browse the repository on the left. Your edits are saved to this cloud session."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

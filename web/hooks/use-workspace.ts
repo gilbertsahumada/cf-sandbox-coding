@@ -103,6 +103,7 @@ export function useWorkspace(runner: Runner) {
         ).json();
         if (ticket !== generation.current || epoch !== directoryEpoch.current)
           return;
+        if (!Array.isArray(data.entries)) throw new Error("Repository files are not available yet.");
         setDirectories((previous) => ({
           ...previous,
           [key]: {
@@ -132,8 +133,8 @@ export function useWorkspace(runner: Runner) {
     directoryEpoch.current++;
     directoryRef.current = {};
     setDirectories({});
-    if (task && runner.connected) void directory("");
-  }, [directory, task, runner.connected]);
+    if (task && runner.connected && runner.selected?.state !== "cloning" && !(runner.startup?.task === task && runner.startup.stage === "failed")) void directory("");
+  }, [directory, task, runner.connected, runner.selected?.state, runner.startup?.task, runner.startup?.stage]);
   useEffect(() => {
     refreshTree();
   }, [refreshTree, runner.selected?.state]);
@@ -279,6 +280,8 @@ export function useWorkspace(runner: Runner) {
     selected = visible.find((doc) => doc.path === active[task]) || visible[0];
   return {
     task,
+    preparing: runner.selected?.state === "cloning",
+    preparationError: runner.startup?.task === task && runner.startup.stage === "failed" ? runner.startup.error || "Session preparation failed." : null,
     directories,
     directory,
     refreshTree,

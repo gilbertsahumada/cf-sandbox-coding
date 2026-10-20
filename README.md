@@ -267,3 +267,10 @@ The local `preview:editor` fixture allows inline style elements so Codex Annotat
 Agent response fences highlight JavaScript, TypeScript, JSX and TSX using the same parser family as the source editor. Declared language aliases are normalized; plain-text or unlabelled fences use conservative code detection, leaving unsupported languages as literal text. Highlighting preserves the source text and renders escaped React nodes. The new-session form shows an explicit selection check and agent name. Its repository menu uses shadcn Select, retaining the loaded-repository search, pagination and remembered choice.
 
 Verification for these controls uses the simulated preview: switching Pi/OpenCode changes the checked radio and selection label; starting an OpenCode fixture task confirms the selected agent reaches the request. Repository selection, search filtering and loading the complete catalog were checked in the custom menu. No real model task was started for these checks.
+
+
+### Session preparation feedback and archived activity
+
+A validated new session closes its dialog before the repository request completes and opens the session conversation on compact screens. The chat, editor, file explorer and tool activity show preparation, cloning and agent-start feedback; the session list and status bar retain their preparing state. Preparation failures keep the instruction visible in the session and in the form, with a workspace-level error. The Stop action is disabled until startup requests settle so it cannot race an agent launch. Local startup details remain in memory and are cleared on sign-out.
+
+Archived activity explicitly explains its latest-32-KB limit. A leading event cut by the archival boundary is described as a skipped incomplete archived entry; tool failures remain errors and session status remains separate. Use `node scripts/preview-editor.mjs --slow-start` to inspect delayed preparation, or add `--fail-start` for a simulated clone failure. Fixture archived sessions replay a clipped leading event to verify the neutral message. These checks do not start real Cloudflare agents.

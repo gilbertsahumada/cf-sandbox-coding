@@ -163,10 +163,12 @@ export function NewSessionDialog({
   runner,
   open,
   onOpenChange,
+  onStarting,
 }: {
   runner: Runner;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onStarting: () => void;
 }) {
   const [agent, setAgent] = useState<Agent>("pi"),
     [query, setQuery] = useState(""),
@@ -191,6 +193,7 @@ export function NewSessionDialog({
         example ? null : runner.repository,
         ref.trim(),
         example,
+        () => { onOpenChange(false); onStarting(); },
       );
       setPrompt("");
       onOpenChange(false);
