@@ -1,5 +1,5 @@
 const agents = new Set(['pi', 'opencode']);
-const states = new Set(['cloning', 'running', 'succeeded', 'failed', 'lost', 'none']);
+const states = new Set(['cloning', 'running', 'stopping', 'cancelled', 'succeeded', 'failed', 'lost', 'none']);
 export function recoveredRun(id) {
   if (typeof id !== 'string' || id.length > 63 || !/^(pi|opencode)-[a-z0-9-]+$/.test(id)) return null;
   return { id, agent: id.startsWith('opencode-') ? 'opencode' : 'pi', private: true, repository: 'Sesión recuperada', ref: '', state: 'running', startedAt: null };

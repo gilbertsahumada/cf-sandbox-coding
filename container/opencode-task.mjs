@@ -1,3 +1,4 @@
+import { openCodeEvents } from './opencode-events.mjs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -26,12 +27,13 @@ async function request(path, body, timeout = 29 * 60_000) {
   return response.json();
 }
 const eventsController = new AbortController();
-async function followEvents(sessionID) {
+async function followEvents(sessionID, onReady) {
   const url = new URL('/event', 'http://127.0.0.1:4096');
   url.searchParams.set('directory', process.cwd());
   const response = await fetch(url, { headers: { authorization }, signal: eventsController.signal });
   if (!response.ok || !response.body) throw new Error('OpenCode event stream is unavailable');
-  const seen = new Set();
+  const normalize = openCodeEvents(sessionID);
+  onReady();
   const decoder = new TextDecoder();
   let buffered = '';
   for await (const chunk of response.body) {
@@ -42,15 +44,7 @@ async function followEvents(sessionID) {
       const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
       let event;
       try { event = JSON.parse(data); } catch { continue; }
-      const part = event.properties?.part;
-      if (event.type !== 'message.part.updated' || part?.sessionID !== sessionID || part.type !== 'tool') continue;
-      const state = part.state;
-      if (!state || !['running', 'completed', 'error'].includes(state.status)) continue;
-      const key = `${part.id}:${state.status}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (state.status === 'running') console.log(JSON.stringify({ type: 'tool_execution_start', toolName: part.tool, args: state.input }));
-      else console.log(JSON.stringify({ type: 'tool_execution_end', toolName: part.tool, isError: state.status === 'error', result: { content: [{ type: 'text', text: state.output || state.error || 'Herramienta completada.' }] } }));
+      for (const normalized of normalize(event)) console.log(JSON.stringify(normalized));
     }
   }
 }
@@ -68,7 +62,11 @@ try {
     { permission: '*', pattern: '*', action: 'allow' },
     ...['question', 'plan_enter', 'plan_exit'].map(permission => ({ permission, pattern: '*', action: 'deny' })),
   ] });
-  const events = followEvents(session.id).catch(error => { if (error.name !== 'AbortError') console.error('Live events unavailable:', error.message); });
+  let markReady, failReady;
+  const subscribed = new Promise((resolve, reject) => { markReady = resolve; failReady = reject; });
+  const events = followEvents(session.id, markReady).catch(error => { failReady(error); if (error.name !== 'AbortError') console.error('Live events unavailable:', error.message); });
+  const subscriptionTimeout = setTimeout(() => failReady(new Error('OpenCode event subscription timed out')), 5000);
+  try { await subscribed; } finally { clearTimeout(subscriptionTimeout); }
   const result = await request(`/session/${session.id}/message`, {
     model: { providerID: 'custom', modelID }, parts: [{ type: 'text', text: prompt }],
   });

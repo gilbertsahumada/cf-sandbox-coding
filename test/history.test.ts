@@ -28,3 +28,11 @@ test('history validation discards malformed entries and preserves public history
   assert.equal(saved[0].finishedAt, 2000);
   assert.equal(historyForStorage(Array.from({ length: 20 }, () => publicRun)).length, 12);
 });
+
+test('stopping and cancelled states survive reloading private task references', () => {
+  for (const state of ['stopping', 'cancelled']) {
+    const [saved] = historyForStorage([{ id, agent: 'pi', private: true, repository: 'private-repo', state }]);
+    assert.equal(saved.state, state);
+    assert.equal(saved.repository, 'Repositorio privado');
+  }
+});

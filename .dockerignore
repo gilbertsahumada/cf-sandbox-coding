@@ -2,3 +2,6 @@
 !Dockerfile
 !container/
 !container/opencode-task.mjs
+!container/follow-task.mjs
+!container/stop-task.mjs
+!container/opencode-events.mjs

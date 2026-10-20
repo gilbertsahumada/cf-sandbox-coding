@@ -1,3 +1,4 @@
+import { eventFrame } from './event-stream';
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
 import type { RepositoryGrant } from "./github-api";
 import { DurableObject } from "cloudflare:workers";
@@ -38,6 +39,8 @@ const taskRunningScript = `read -r pid boot <"$1" &&
 export type TaskStatus =
 	| { state: "none" }
 	| { state: "running" }
+    | { state: "stopping" }
+    | { state: "cancelled"; error: string }
 	| { state: "lost" }
 	| { state: "succeeded"; result: string }
 	| { state: "failed"; error: string };
@@ -173,22 +176,102 @@ export class AgentSandbox extends DurableObject<Env> {
 
     async stopTask(): Promise<{ state: TaskStatus['state']; containerRunning: boolean }> {
         return this.ctx.blockConcurrencyWhile(async () => {
-            const saved = this.ctx.storage.kv.get<TaskStatus>('result');
-            const hasTask = this.ctx.storage.kv.get(taskKey) !== undefined;
+            const original = await this.readTask();
+            const active = ['running', 'stopping'].includes(original.state);
+            if (active) this.ctx.storage.kv.put('stopRequested', true);
             await this.ctx.storage.deleteAlarm();
             try {
-                if (this.container.running) await this.container.destroy();
+                if (this.container.running) {
+                    if (active) {
+                        // Only signal the agent's own process group from this container boot.
+                        await this.run(['node', '/opt/stop-task.mjs', taskDirectory], '/', {}).catch(() => {});
+                    }
+                    try { this.ctx.storage.kv.put('logs', await this.readLogs()); } catch { console.warn('Could not archive logs before shutdown'); }
+                    try { const diff = await this.readDiff(); if (diff.exitCode === 0) this.saveDiff(diff); } catch { console.warn('Could not archive changes before shutdown'); }
+                    await this.container.destroy();
+                }
+                if (active) this.ctx.storage.kv.put('result', { state: 'cancelled', error: 'Task stopped by user' } satisfies TaskStatus);
+                else if (original.state !== 'none') this.ctx.storage.kv.put('result', original);
+                this.ctx.storage.kv.delete('stopRequested');
             } catch (error) {
-                if (hasTask && !saved) await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
+                this.ctx.storage.kv.delete('stopRequested');
+                if (active) await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
                 throw error;
             }
-            if (hasTask && !saved) this.ctx.storage.kv.put('result', { state: 'failed', error: 'Task stopped by user' } satisfies TaskStatus);
             const status = await this.readTask();
             return { state: status.state, containerRunning: this.container.running };
         });
     }
 
+    async streamEvents(cursor: string): Promise<Response> {
+        const status = await this.readTask();
+        const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+        const writer = writable.getWriter();
+        let observer: ExecProcess | undefined;
+        let exited = false;
+        let disconnected = false;
+        const stopObserver = () => {
+            disconnected = true;
+            // Disconnecting the browser must never signal the independent agent process.
+            if (observer && !exited) { try { observer.kill(); } catch {} }
+        };
+        void writer.closed.catch(stopObserver);
+        const heartbeat = setInterval(() => {
+            void writer.write(new TextEncoder().encode(': keep-alive\n\n')).catch(stopObserver);
+        }, 5000);
+        const send = (type: string, data: unknown) => writer.write(eventFrame(type, data));
+        const pump = async () => {
+            try {
+                await send('status', status);
+                if (this.container.running && this.ctx.storage.kv.get(taskKey)) {
+                    observer = await this.container.exec(['node', '/opt/follow-task.mjs', taskDirectory, cursor], { cwd: '/', stderr: 'ignore' });
+                    void observer.exitCode.then(() => { exited = true; }, () => { exited = true; });
+                    if (disconnected) { stopObserver(); return; }
+                    if (!observer.stdout) throw Error('Missing observer output');
+                    let buffered = '';
+                    // Forward whole SSE frames so heartbeat comments cannot split a JSON payload.
+                    for await (const text of observer.stdout.pipeThrough(new TextDecoderStream())) {
+                        buffered += text;
+                        let boundary: number;
+                        while ((boundary = buffered.indexOf('\n\n')) >= 0) {
+                            await writer.write(new TextEncoder().encode(buffered.slice(0, boundary + 2)));
+                            buffered = buffered.slice(boundary + 2);
+                        }
+                    }
+                    if (buffered) throw Error('Incomplete observer frame');
+                    if (await observer.exitCode !== 0) throw Error('Log observer stopped');
+                } else {
+                    // Archived output is a bounded tail, so explicitly replace any partial replay.
+                    await send('reset', { archived: true });
+                    const logs = this.ctx.storage.kv.get<{ stdout: string; stderr: string }>('logs');
+                    if (logs?.stdout) await send('stdout', logs.stdout);
+                    if (logs?.stderr) await send('stderr', logs.stderr);
+                }
+                const final = await this.readTask();
+                await send('status', final);
+                if (!['running', 'stopping'].includes(final.state)) await send('done', {});
+            } catch (error) {
+                if (!disconnected) {
+                    console.warn('Log observer interrupted', error instanceof Error ? error.message : 'unknown');
+                    try {
+                        const final = await this.readTask();
+                        await send('status', final);
+                        if (!['running', 'stopping'].includes(final.state)) await send('done', {});
+                        else await send('notice', { message: 'Reconectando la actividad…' });
+                    } catch {}
+                }
+            } finally {
+                clearInterval(heartbeat);
+                stopObserver();
+                await writer.close().catch(() => {});
+            }
+        };
+        void pump();
+        return new Response(readable, { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+    }
+
 	async readTask(): Promise<TaskStatus> {
+        if (this.ctx.storage.kv.get('stopRequested')) return { state: 'stopping' };
         const result = this.ctx.storage.kv.get<TaskStatus>("result");
         if (result) return result;
 		if (!this.container.running) {

@@ -21,7 +21,7 @@ Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **
 
 La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial conserva las últimas 12 tareas en este navegador. Para tareas privadas solo conserva el identificador, agente, tiempos y estado; no guarda nombres de repositorios, ramas, instrucciones, logs ni cambios. Los nombres privados se sustituyen por una etiqueta genérica y esas entradas se eliminan al cerrar sesión. Un enlace `/?task=ID` permite recuperar una tarea existente después de autenticarte. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
 
-Los logs se actualizan cada 3,5 segundos. OpenCode emite sus herramientas y resultados desde su stream de eventos; Pi usa sus eventos JSON. La salida y los diffs se muestran como texto, sin interpretar HTML. La interfaz permite una tarea nueva a la vez por navegador y conserva el historial al recargar. Si cierras la página antes de que se envíe la instrucción al agente, inicia una tarea nueva.
+La actividad llega por SSE en una conexión autenticada, sin consultar logs periódicamente. La interfaz añade comandos, resultados y texto progresivo según llegan. OpenCode emite sus herramientas y resultados desde su stream de eventos; Pi usa sus eventos JSON. La conexión se recupera automáticamente desde los últimos offsets de salida recibidos; recargar vuelve a reproducir la salida disponible sin iniciar otro agente. Cerrar la pestaña solo detiene el observador de logs, no la tarea. El botón **Detener tarea** cancela la ejecución y guarda los logs y cambios cuando es posible. El estado **Detenida** distingue una cancelación de un fallo. La salida y los diffs se muestran como texto, sin interpretar HTML. La interfaz permite una tarea nueva a la vez por navegador y conserva el historial al recargar. Si cierras la página antes de que se envíe la instrucción al agente, inicia una tarea nueva.
 
 La página y sus archivos estáticos son públicos; todas las operaciones y resultados requieren autenticación. Las solicitudes que modifican datos mediante cookies exigen el mismo origen. La clave del modelo nunca se envía al navegador.
 
@@ -114,9 +114,10 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | GET | `/health` | Estado del Worker y agentes disponibles |
 | POST | `/sandboxes/:id/repository` | URL pública o `{ "installationId": 123, "repositoryId": 456, "ref": "main" }`; `ref` opcional |
 | POST | `/sandboxes/:id/task` | JSON `{ "agent": "pi", "prompt": "..." }`; también acepta `opencode` |
-| GET | `/sandboxes/:id/task` | `none`, `running`, `lost`, `succeeded` o `failed` |
-| DELETE | `/sandboxes/:id/task` | Detener el contenedor y sus tareas; conserva resultados ya archivados y elimina la alarma de seguimiento |
+| GET | `/sandboxes/:id/task` | `none`, `running`, `stopping`, `cancelled`, `lost`, `succeeded` o `failed` |
+| DELETE | `/sandboxes/:id/task` | Cancelar el grupo de procesos, archivar logs y diff cuando sea posible y detener el contenedor; conserva resultados ya archivados |
 | GET | `/sandboxes/:id/logs` | Últimos 32 KB de stdout y stderr |
+| GET | `/sandboxes/:id/events` | SSE de stdout, stderr y estado; reconexión con `Last-Event-ID` o `?cursor=stdoutBytes:stderrBytes` |
 | GET | `/sandboxes/:id/diff` | Patch Git, incluidos archivos nuevos y binarios |
 
 Cada sandbox acepta una sola tarea. Usa otro nombre para una tarea nueva. El diff se calcula contra el commit inicial, aunque el agente cree commits durante su ejecución.
@@ -140,7 +141,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 25 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 32 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check
@@ -171,3 +172,15 @@ Ejecuta una tarea breve con cada agente en un clon público de `octocat/Hello-Wo
 La coordinación del contenedor se adapta del [runner oficial de Cloudflare](https://developers.cloudflare.com/sandbox/get-started/build-a-coding-agent-runner/), con adaptadores para [Pi](https://developers.cloudflare.com/sandbox/coding-agents/pi/) y [OpenCode](https://developers.cloudflare.com/sandbox/coding-agents/opencode/).
 
 Proveedor personalizado: [Pi models](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md) y [OpenCode providers](https://opencode.ai/docs/providers/).
+
+## Verificar SSE y cancelación
+
+```sh
+npm run verify:sse
+```
+
+Ejecuta dos tareas controladas con Qwen sobre el repositorio público `octocat/Hello-World`. Comprueba que llegan eventos antes de terminar, que desconectar y reconectar el observador no cancela Pi y que detener OpenCode conserva el cambio de prueba. Al terminar apaga ambos contenedores. Guarda solo métricas en `verification/sse-live.json`; consume recursos de Containers y del proveedor del modelo.
+
+Durante la ejecución se leen los archivos de salida completos con offsets de bytes. Una vez apagado el contenedor, la recuperación muestra la cola archivada de hasta 32 KB por canal y lo indica en la interfaz. El navegador no guarda logs, diffs ni cursores de contenido en localStorage. La vista limita el volumen de texto visible para evitar crecimiento indefinido de memoria.
+
+Verificación SSE en Cloudflare: Pi recibió eventos antes de completar y continuó tras desconectar el observador; la reconexión completó la tarea. OpenCode se canceló mientras ejecutaba una herramienta y conservó `sse-check.txt` en el diff archivado. Ambas instancias se apagaron al finalizar. Métricas en `verification/sse-live.json`; prueba de interfaz con datos simulados en `verification/sse-browser.json`.

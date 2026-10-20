@@ -1,0 +1,66 @@
+const textBlocks = value => Array.isArray(value) ? value.filter(block => block?.type === 'text').map(block => block.text || '').join('\n') : '';
+export function createActivity(target, run, count, follow) {
+  target.replaceChildren();
+  const title = document.createElement('div'); title.className = 'log-line system'; title.textContent = `${run.agent === 'pi' ? 'Pi' : 'OpenCode'} · ${run.id}`; target.append(title);
+  const waiting = document.createElement('div'); waiting.className = 'log-line system'; waiting.textContent = run.state === 'cloning' ? 'Preparando el entorno y clonando el repositorio…' : 'Esperando la primera salida del agente…'; target.append(waiting);
+  let buffered = '', total = 0, assistant = null, stderr = null, dirty = false;
+  const nodes = new Map();
+  const add = (text, kind = '', key) => {
+    waiting.remove();
+    let node = key ? nodes.get(key) : null;
+    if (!node || node.parentNode !== target) {
+      node = document.createElement('div'); node.className = `log-line ${kind}`; target.append(node); total++; count.textContent = String(total);
+      if (key) nodes.set(key, node);
+    }
+    node.textContent = String(text).slice(-64000);
+    return node;
+  };
+  const changed = () => {
+    // Keep the view bounded without retaining private output in browser storage.
+    while (target.childNodes.length > 350 || (target.textContent.length > 256000 && target.childNodes.length > 2)) target.childNodes[1].remove();
+    for (const [key, node] of nodes) if (node.parentNode !== target) nodes.delete(key);
+    if (follow.checked) target.scrollTop = target.scrollHeight;
+  };
+  const line = raw => {
+    if (!raw.trim()) return;
+    let event;
+    try { event = JSON.parse(raw); } catch { add('Salida parcial no disponible.', 'system', 'partial'); return; }
+    if (!event || typeof event !== 'object') return;
+    const toolKey = `tool:${event.toolCallId || event.toolName || 'unknown'}`;
+    if (event.type === 'tool_execution_start') add(`${event.toolName || 'herramienta'}  ${JSON.stringify(event.args || {})}`, 'tool', `${toolKey}:start`);
+    else if (event.type === 'tool_execution_update') add(textBlocks(event.partialResult?.content) || 'Ejecutando…', '', toolKey);
+    else if (event.type === 'tool_execution_end') { add(textBlocks(event.result?.content) || (event.isError ? 'La herramienta falló.' : 'Herramienta completada.'), event.isError ? 'error' : '', toolKey); dirty = true; }
+    else if (event.type === 'message_start' && event.message?.role === 'assistant') assistant = null;
+    else if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') {
+      if (!assistant || assistant.parentNode !== target) assistant = add('', 'result');
+      assistant.textContent = (assistant.textContent + (event.assistantMessageEvent.delta || '')).slice(-64000);
+    } else if (event.type === 'message_end' && event.message?.role === 'assistant') {
+      const text = textBlocks(event.message.content);
+      if (text) { if (assistant?.parentNode === target) assistant.textContent = text.slice(-64000); else assistant = add(text, 'result'); }
+      if (event.message.errorMessage) add(event.message.errorMessage, 'error');
+    } else if (event.type === 'message_text') {
+      assistant = add(event.part?.text || '', 'result', `message:${event.part?.id}`);
+    } else if (event.type === 'text') {
+      if (assistant?.parentNode === target) assistant.textContent = (event.part?.text || '').slice(-64000); else assistant = add(event.part?.text || '', 'result');
+    } else if (event.type === 'error') add(event.error?.data?.message || event.error?.name || 'Error del agente', 'error');
+    // Other agent events can contain internal model state; only render explicit activity.
+  };
+  count.textContent = '0';
+  return {
+    stdout(text) {
+      dirty = false;
+      buffered += text;
+      let boundary;
+      while ((boundary = buffered.indexOf('\n')) >= 0) { line(buffered.slice(0, boundary)); buffered = buffered.slice(boundary + 1); }
+      if (buffered.length > 2_000_000) { buffered = ''; add('Se omitió un evento demasiado grande.', 'system'); }
+      changed();
+      return dirty;
+    },
+    stderr(text) {
+      if (!stderr || stderr.parentNode !== target) stderr = add('', 'error');
+      stderr.textContent = (stderr.textContent + text).slice(-64000); changed();
+    },
+    finish() { if (buffered.trim()) line(buffered); buffered = ''; changed(); },
+    note(text) { add(text, 'system'); changed(); },
+  };
+}

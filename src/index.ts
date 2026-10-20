@@ -1,3 +1,4 @@
+import { logCursor } from './event-stream';
 import { authenticated, hasBearer, sameOrigin, sessionCookie } from "./auth";
 import { z } from "zod";
 import { Agent } from "./agents";
@@ -39,7 +40,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (['/github/manifest/callback', '/github/install/callback'].includes(path) && request.method === 'GET') return githubCallback(request, env);
-    if (["/", "/app.js", "/run-history.js", "/styles.css", "/favicon.svg"].includes(path) && ["GET", "HEAD"].includes(request.method)) {
+    if (["/", "/app.js", "/run-history.js", "/activity.js", "/styles.css", "/favicon.svg"].includes(path) && ["GET", "HEAD"].includes(request.method)) {
       const response = await env.ASSETS.fetch(request);
       const headers = new Headers(response.headers);
       headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com");
@@ -62,12 +63,17 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
     if (new URL(request.url).pathname === "/health" && request.method === "GET") return Response.json({ ok: true, agents: ["pi", "opencode"] });
-    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs)$/.exec(new URL(request.url).pathname);
+    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events)$/.exec(new URL(request.url).pathname);
     if (!match) return new Response("Not found", { status: 404 });
     if (!env.MODEL_BASE_URL || !env.MODEL_ID || !env.MODEL_API_KEY) return new Response("Configure model endpoint, model ID and API key first", { status: 503 });
     const [, name, resource] = match;
     const sandbox = env.SANDBOX.getByName(name);
     try {
+      if (resource === 'events' && request.method === 'GET') {
+        const cursor = logCursor(request.headers.get('last-event-id') || new URL(request.url).searchParams.get('cursor') || '0:0');
+        if (!cursor) return new Response('Invalid log cursor', { status: 400 });
+        return sandbox.streamEvents(cursor);
+      }
       if (resource === "repository" && request.method === "POST") {
         const parsed = Repository.safeParse(await readJson(request));
         if (!parsed.success) return Response.json({ error: parsed.error.issues }, { status: 400 });

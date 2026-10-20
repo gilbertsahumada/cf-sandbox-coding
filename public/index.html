@@ -19,7 +19,7 @@
 <section class="history-section"><div class="history-heading"><h2>Tareas recientes</h2><button id="new-task" class="text-button" type="button">Nueva tarea</button></div><p id="no-history" class="hint">Tus tareas aparecerán aquí, en este navegador.</p><ul id="history" class="history"></ul></section>
 </aside>
 <section class="workspace" aria-label="Seguimiento de la tarea">
-<div class="workspace-heading"><div><span class="workspace-label">Tu espacio de trabajo</span><h2 id="workspace-title">Todo listo para empezar</h2></div><span id="task-state" class="state neutral">Sin tarea</span></div>
+<div class="workspace-heading"><div><span class="workspace-label">Tu espacio de trabajo</span><h2 id="workspace-title">Todo listo para empezar</h2></div><div class="workspace-actions"><span id="stream-status" class="stream-status" role="status" hidden></span><span id="task-state" class="state neutral">Sin tarea</span><button id="stop-task" class="stop-button" type="button" hidden>Detener tarea</button></div></div>
 <div id="notice" class="notice" role="status" hidden></div>
 <div id="run-meta" class="run-meta" hidden><span id="run-agent"></span><span id="run-repository"></span><span id="run-time"></span></div>
 <ol id="progress" class="progress" aria-label="Progreso" hidden><li data-stage="clone"><span>1</span>Preparar repositorio</li><li data-stage="run"><span>2</span>Ejecutar agente</li><li data-stage="done"><span>3</span>Revisar resultado</li></ol>
