@@ -17,11 +17,11 @@ Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **
 1. Elige Pi u OpenCode.
 2. Conecta GitHub, autoriza los repositorios y elige uno en el selector. Puedes buscar entre públicos y privados y especificar una rama o etiqueta.
 3. Describe la tarea y pulsa **Ejecutar tarea**.
-4. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
+4. Responde en **Conversación de la tarea** para continuar con el mismo agente, contexto y repositorio. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
 
 La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial conserva las últimas 12 tareas en este navegador. Para tareas privadas solo conserva el identificador, agente, tiempos y estado; no guarda nombres de repositorios, ramas, instrucciones, logs ni cambios. Los nombres privados se sustituyen por una etiqueta genérica y esas entradas se eliminan al cerrar sesión. Un enlace `/?task=ID` permite recuperar una tarea existente después de autenticarte. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
 
-La actividad llega por SSE en una conexión autenticada, sin consultar logs periódicamente. La interfaz añade comandos, resultados y texto progresivo según llegan. OpenCode emite sus herramientas y resultados desde su stream de eventos; Pi usa sus eventos JSON. La conexión se recupera automáticamente desde los últimos offsets de salida recibidos; recargar vuelve a reproducir la salida disponible sin iniciar otro agente. Cerrar la pestaña solo detiene el observador de logs, no la tarea. El botón **Detener tarea** cancela la ejecución y guarda los logs y cambios cuando es posible. El estado **Detenida** distingue una cancelación de un fallo. La salida y los diffs se muestran como texto, sin interpretar HTML. La interfaz permite una tarea nueva a la vez por navegador y conserva el historial al recargar. Si cierras la página antes de que se envíe la instrucción al agente, inicia una tarea nueva.
+La actividad llega por SSE en una conexión autenticada, sin consultar logs periódicamente. La interfaz añade comandos, resultados y texto progresivo según llegan. OpenCode emite sus herramientas y resultados desde su stream de eventos; Pi usa sus eventos JSON. La conexión se recupera automáticamente desde los últimos offsets de salida recibidos; recargar vuelve a reproducir la salida disponible sin iniciar otro agente. Cerrar la pestaña solo detiene el observador de logs, no la tarea. El botón **Detener tarea** cancela la ejecución y guarda los logs y cambios cuando es posible. El estado **Detenida** distingue una cancelación de un fallo. La salida y los diffs se muestran como texto, sin interpretar HTML. La interfaz permite una tarea nueva a la vez por navegador y conserva el historial al recargar. Cada respuesta del agente deja el estado **Respuesta lista**, con el chat esperando tu siguiente mensaje. Si cierras la página antes de que se envíe la instrucción al agente, inicia una tarea nueva.
 
 La página y sus archivos estáticos son públicos; todas las operaciones y resultados requieren autenticación. Las solicitudes que modifican datos mediante cookies exigen el mismo origen. La clave del modelo nunca se envía al navegador.
 
@@ -124,6 +124,8 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | GET | `/health` | Estado del Worker y agentes disponibles |
 | POST | `/sandboxes/:id/repository` | URL pública o `{ "installationId": 123, "repositoryId": 456, "ref": "main" }`; `ref` opcional |
 | POST | `/sandboxes/:id/task` | JSON `{ "agent": "pi", "prompt": "..." }`; también acepta `opencode` |
+| GET | `/sandboxes/:id/messages` | Conversación, turno actual, disponibilidad para continuar y estado del punto de recuperación |
+| POST | `/sandboxes/:id/messages` | `{ "id": "UUID", "prompt": "..." }`; continúa la sesión nativa; reutiliza el mismo ID si reintentas |
 | GET | `/sandboxes/:id/task` | `none`, `running`, `stopping`, `cancelled`, `lost`, `succeeded` o `failed` |
 | DELETE | `/sandboxes/:id/task` | Cancelar el grupo de procesos, archivar logs y diff cuando sea posible y detener el contenedor; conserva resultados ya archivados |
 | GET | `/sandboxes/:id/logs` | Últimos 32 KB de stdout y stderr |
@@ -132,15 +134,16 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | POST | `/sandboxes/:id/pull-request` | `{ "title": "...", "description": "..." }`; crea una propuesta en borrador |
 | GET | `/sandboxes/:id/diff` | Patch Git, incluidos archivos nuevos y binarios |
 
-Cada sandbox acepta una sola tarea. Usa otro nombre para una tarea nueva. El diff se calcula contra el commit inicial, aunque el agente cree commits durante su ejecución.
+Cada sandbox mantiene una sola tarea con hasta 100 turnos de conversación. Usa otro nombre para una tarea nueva. El diff se calcula contra el commit inicial, aunque el agente cree commits durante su ejecución.
 
 ## Ejecución y conservación de resultados
 
 - La tarea corre en segundo plano; una alarma cada minuto mantiene activo su Durable Object.
-- Límite de ejecución: 30 minutos. La instancia usa `standard-1`.
+- Límite de ejecución: 30 minutos por turno. La instancia usa `standard-1`.
 - Al terminar, la siguiente alarma conserva resultado, cola de logs y diff en el almacenamiento del Durable Object. Después permite que el contenedor se detenga por inactividad.
 - El mensaje final se limita a los últimos 16000 caracteres. El diff se almacena por fragmentos, sin truncarlo deliberadamente.
-- El workspace completo no se conserva ni se restaura. Si la instancia se pierde antes de archivar, el estado es `lost` y los cambios pueden perderse.
+- Las nuevas conversaciones conservan un punto de recuperación del repositorio completo (incluido `.git`), la configuración del agente y sus archivos nativos de sesión al terminar cada turno. Se guarda comprimido y fragmentado en el Durable Object, con comprobación de integridad; el límite es 20 MB comprimidos. La recuperación mantiene el mismo directorio del repositorio y la misma sesión.
+- Si el punto de recuperación falla, la interfaz lo advierte y mantiene el entorno abierto hasta 30 minutos por inactividad. No se promete recuperación de un turno interrumpido por una pérdida inesperada antes de guardarlo. Los archivos fuera del repositorio y de los directorios de sesión/configuración no forman parte del punto guardado.
 - Los resultados archivados permanecen hasta que se elimine su Durable Object; esta versión no incluye limpieza automática.
 
 ## Red y credenciales
@@ -153,7 +156,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 37 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 49 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check
@@ -198,3 +201,24 @@ Durante la ejecución se leen los archivos de salida completos con offsets de by
 Verificación SSE en Cloudflare: Pi recibió eventos antes de completar y continuó tras desconectar el observador; la reconexión completó la tarea. OpenCode se canceló mientras ejecutaba una herramienta y conservó `sse-check.txt` en el diff archivado. Ambas instancias se apagaron al finalizar. Métricas en `verification/sse-live.json`; prueba de interfaz con datos simulados en `verification/sse-browser.json`.
 
 La creación de propuestas se verificó con repositorios Git locales y respuestas de GitHub simuladas: binarios, eliminación, renombre, modos, enlaces simbólicos, commit del agente, reintentos y conflicto de rama. La interfaz se probó con datos simulados, incluyendo error de permisos, reintento y recuperación del enlace al recargar (`verification/pr-ui.png`). La publicación real desde la GitHub App queda pendiente de aprobar sus permisos de escritura.
+
+## Conversaciones con Pi y OpenCode
+
+El chat separa tus mensajes y las respuestas del agente de los logs de herramientas. Mientras el agente trabaja, puedes preparar una respuesta; el envío se habilita al terminar. Para cambiar de dirección antes, pulsa **Detener tarea** y envía la siguiente instrucción. La cancelación guarda el entorno cuando es posible antes de apagarlo; no borra la conversación ni los cambios.
+
+Pi usa `--session-id task --session-dir /workspace/conversation/pi` en lugar de `--no-session`. OpenCode guarda su ID de sesión y base de datos local bajo `/workspace/conversation` y vuelve a enviar a esa sesión mediante su [API de mensajes](https://opencode.ai/docs/server/#messages). Una sesión guardada inválida produce un error; no se reemplaza silenciosamente por una conversación vacía. Los tokens siguen fuera del contenedor.
+
+La API serializa los turnos y rechaza un envío nuevo mientras el agente está activo. Los UUID de mensajes evitan repetir un turno si se pierde la respuesta HTTP. El navegador conserva un ID de reintento en memoria, sin guardar instrucciones ni respuestas en localStorage. Las pestañas del mismo navegador notifican cambios mediante identificadores de tarea; SSE distingue cada turno para no reproducir offsets anteriores sobre logs nuevos. Cerrar sesión limpia el chat visible.
+
+Cada turno invalida los caches de diff y propuesta para que **Cambios** muestre el acumulado contra el commit inicial. Crear PR publica el acumulado del turno actual; los turnos posteriores pueden crear otro borrador, con una rama distinta, sin sobrescribir un PR anterior.
+
+Las tareas ejecutadas antes de esta función no guardaron sesiones nativas ni puntos de recuperación y muestran el chat deshabilitado con una explicación. Sus resultados y patches archivados siguen disponibles. Los mensajes aún no enviados no se guardan al recargar.
+
+Prueba local de continuación sin claves ni red externa:
+
+```sh
+docker build --platform linux/amd64 -t cf-sandbox-coding:chat .
+docker run --rm --platform linux/amd64 --network none -v "$PWD/scripts/smoke-chat.mjs:/test.mjs:ro" cf-sandbox-coding:chat node /test.mjs
+```
+
+Verificado con ambos CLI reales y un proveedor simulado: dos turnos, recuerdo de un dato presente solo en el primer mensaje, restauración del workspace y conservación de los dos archivos modificados. No se ha verificado todavía esta continuación con Qwen en Cloudflare. Prueba de navegador con datos simulados: respuesta HTTP perdida, reintento con un único turno nuevo y conversación recuperada al recargar (`verification/chat-ui.png`).

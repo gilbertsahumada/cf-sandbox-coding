@@ -13,3 +13,4 @@ WORKDIR /workspace
 CMD ["sleep", "infinity"]
 
 COPY container/export-changes.mjs /opt/export-changes.mjs
+COPY container/workspace-checkpoint.mjs /opt/workspace-checkpoint.mjs

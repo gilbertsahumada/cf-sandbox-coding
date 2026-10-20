@@ -1,8 +1,9 @@
+import { createChat } from './chat.js';
 import { createActivity } from './activity.js';
 import { historyForStorage, recoveredRun } from './run-history.js';
 const $ = id => document.getElementById(id);
 const names = { pi: 'Pi', opencode: 'OpenCode' };
-const labels = { cloning: 'Preparando', running: 'En curso', stopping: 'Deteniendo', cancelled: 'Detenida', succeeded: 'Completada', failed: 'Falló', lost: 'Entorno perdido', none: 'Sin tarea' };
+const labels = { cloning: 'Preparando', running: 'En curso', stopping: 'Deteniendo', cancelled: 'Detenida', succeeded: 'Respuesta lista', failed: 'Falló', lost: 'Entorno perdido', none: 'Sin tarea' };
 let connected = false;
 let selected = null;
 let generation = 0;
@@ -10,6 +11,39 @@ let diff = '';
 let busy = false;
 let liveCleanup = () => {};
 const stoppingTasks = new Set();
+const chatView = createChat($('chat-messages'));
+let chatInfo = null, sendingChat = false, pendingChat = null;
+const chatChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('sandbox-task-updates') : null;
+chatChannel?.addEventListener('message', event => { if (connected && selected?.id === event.data?.task) void selectRun(selected); });
+function clearChat() { chatView.clear(); chatInfo = null; pendingChat = null; $('chat').hidden = true; $('chat-input').value = ''; $('chat-error').hidden = true; }
+function updateChatControls() {
+  const working = selected && ['cloning', 'running', 'stopping'].includes(selected.state);
+  $('chat-send').disabled = !connected || sendingChat || working || !chatInfo?.canContinue;
+  $('chat-input').disabled = !connected || sendingChat || !chatInfo || (!chatInfo.canContinue && !working);
+  $('chat-send').textContent = sendingChat ? 'Enviando…' : 'Enviar mensaje';
+  $('chat-status').textContent = working ? 'El agente está trabajando' : chatInfo?.canContinue ? 'Esperando tu respuesta' : 'Conversación guardada';
+  $('chat-hint').textContent = working ? 'Puedes detener la tarea para cambiar la instrucción.' : chatInfo?.warning || chatInfo?.reason || (chatInfo?.checkpointSaved ? 'Conversación y cambios guardados. Puedes continuar aunque cierres esta página.' : 'Continúas en el mismo repositorio y con el mismo contexto.');
+}
+async function refreshChat(run) {
+  const ticket = generation;
+  const info = await (await api(`/sandboxes/${run.id}/messages`)).json();
+  if (!connected || selected?.id !== run.id || ticket !== generation) return null;
+  chatInfo = info; $('chat').hidden = false; chatView.render(info, names[run.agent]); updateChatControls(); return info;
+}
+$('chat-form').addEventListener('submit', async event => {
+  event.preventDefault(); const run = selected, prompt = $('chat-input').value.trim();
+  if (!run || !connected || sendingChat || !prompt || $('chat-send').disabled) return;
+  if (!pendingChat || pendingChat.task !== run.id || pendingChat.prompt !== prompt) pendingChat = { task: run.id, prompt, id: crypto.randomUUID() };
+  const message = pendingChat; sendingChat = true; $('chat-error').hidden = true; updateChatControls();
+  try {
+    await api(`/sandboxes/${run.id}/messages`, { id: message.id, prompt: message.prompt });
+    pendingChat = null; run.state = 'running'; delete run.finishedAt; saveHistory();
+    chatChannel?.postMessage({ task: run.id });
+    if (selected?.id === run.id) { $('chat-input').value = ''; await selectRun(run); }
+  } catch (error) {
+    if (selected?.id === run.id && connected) { $('chat-error').textContent = error.message; $('chat-error').hidden = false; }
+  } finally { sendingChat = false; updateChatControls(); }
+});
 function closeLive() { liveCleanup(); liveCleanup = () => {}; $('stream-status').hidden = true; }
 let history = [];
 try { const stored = JSON.parse(localStorage.getItem('sandbox-runs') || '[]'); history = Array.isArray(stored) ? historyForStorage(stored) : []; } catch { history = []; }
@@ -21,7 +55,7 @@ function saveHistory() { try { localStorage.setItem('sandbox-runs', JSON.stringi
 function showNotice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 function setConnected(value) {
   connected = value;
-  if (!value) { closeLive(); $('create-pr').hidden = true; $('view-pr').hidden = true; if ($('pr-dialog').open) $('pr-dialog').close(); $('pr-title').value = ''; $('pr-description').value = ''; $('view-pr').removeAttribute('href'); }
+  if (!value) { clearChat(); closeLive(); $('create-pr').hidden = true; $('view-pr').hidden = true; if ($('pr-dialog').open) $('pr-dialog').close(); $('pr-title').value = ''; $('pr-description').value = ''; $('view-pr').removeAttribute('href'); }
   $('connection').classList.toggle('connected', value);
   $('connection-label').textContent = value ? 'Conectado · salir' : 'Conectar';
   updateSubmit();
@@ -76,6 +110,7 @@ function renderHistory() {
   }
 }
 function state(run) {
+  updateChatControls();
   if (['cloning', 'running', 'stopping', 'none'].includes(run.state)) { $('create-pr').hidden = true; $('view-pr').hidden = true; }
   const stopping = run.state === 'stopping' || stoppingTasks.has(run.id);
   $('stop-task').hidden = !connected || !['running', 'stopping'].includes(run.state);
@@ -127,14 +162,20 @@ for (const name of ['activity', 'changes']) {
 $('download-diff').addEventListener('click', () => { const url = URL.createObjectURL(new Blob([diff], { type: 'text/plain;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${selected?.id || 'changes'}.patch`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 async function selectRun(run) {
   closeLive();
+  if (selected?.id !== run.id) clearChat();
   selected = run; const ticket = ++generation;
+  chatInfo = null; updateChatControls();
   $('create-pr').hidden = true; $('view-pr').hidden = true;
   const page = new URL(window.location.href); page.searchParams.set('task', run.id); window.history.replaceState(null, '', page);
   $('workspace-title').textContent = run.repository.replace('https://github.com/', ''); $('run-meta').hidden = false; $('run-agent').textContent = names[run.agent]; $('run-repository').textContent = run.ref || 'Rama predeterminada'; $('run-time').textContent = elapsed(run); $('progress').hidden = false; $('result').hidden = true;
   showNotice(''); state(run); renderDiff(''); let view = activity('', '', run);
   if (!connected || run.state === 'cloning') return;
   const controller = new AbortController();
-  const stream = new EventSource(`/sandboxes/${run.id}/events`);
+  let initialChat;
+  try { initialChat = await refreshChat(run); } catch (error) { if (ticket === generation && connected) showNotice(error.message); }
+  if (ticket !== generation || !connected) return;
+  const streamTurn = initialChat?.turn;
+  const stream = new EventSource(`/sandboxes/${run.id}/events${Number.isSafeInteger(streamTurn) ? `?turn=${streamTurn}` : ''}`);
   let diffTimer, diffBusy = false, diffAgain = false, terminal = false, completed = false, authCheckedAt = 0;
   const current = () => ticket === generation && connected;
   const updateStream = (text, live = false) => { if (!current()) return; $('stream-status').hidden = false; $('stream-status').textContent = text; $('stream-status').classList.toggle('live', live); };
@@ -152,9 +193,10 @@ async function selectRun(run) {
   };
   liveCleanup = () => { stream.close(); controller.abort(); clearTimeout(diffTimer); };
   updateStream('Conectando actividad…');
+  stream.addEventListener('turn', event => { if (current() && Number.isSafeInteger(streamTurn) && JSON.parse(event.data).turn !== streamTurn) void selectRun(run); });
   stream.onopen = () => updateStream('En vivo', true);
-  stream.addEventListener('reset', () => { if (current()) { view = activity('', '', run); view.note('Mostrando la salida guardada más reciente.'); } });
-  stream.addEventListener('stdout', event => { if (current() && view.stdout(JSON.parse(event.data))) queueDiff(); });
+  stream.addEventListener('reset', () => { if (current()) { chatView.reset(); view = activity('', '', run); view.note('Mostrando la salida guardada más reciente.'); } });
+  stream.addEventListener('stdout', event => { if (current()) { const text = JSON.parse(event.data); chatView.stdout(text); if (view.stdout(text)) queueDiff(); } });
   stream.addEventListener('stderr', event => { if (current()) view.stderr(JSON.parse(event.data)); });
   stream.addEventListener('notice', event => { if (current()) updateStream(JSON.parse(event.data).message || 'Reconectando…'); });
   stream.addEventListener('status', event => {
@@ -169,7 +211,7 @@ async function selectRun(run) {
   });
   stream.addEventListener('done', () => {
     if (!current()) return;
-    completed = true; terminal = true; view.finish(); stream.close(); void refreshPullRequest(run);
+    completed = true; terminal = true; view.finish(); stream.close(); void refreshPullRequest(run); void refreshChat(run).catch(error => { if (current()) showNotice(error.message); });
     updateStream(run.state === 'cancelled' ? 'Tarea detenida' : 'Actividad guardada');
     queueDiff(true);
   });
@@ -215,7 +257,7 @@ $('task-form').addEventListener('submit', async event => {
     run.state = 'running'; busy = false; saveHistory(); updateSubmit(); selectRun(run);
   } catch (error) { run.state = 'failed'; run.finishedAt = Date.now(); busy = false; state(run); showNotice(error.message); activity('', error.message, run); }
 });
-$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); closeLive(); generation++; selected = null; $('create-pr').hidden = true; $('view-pr').hidden = true; $('stop-task').hidden = true; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running', 'stopping'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
+$('new-task').addEventListener('click', () => { const page = new URL(window.location.href); page.searchParams.delete('task'); window.history.replaceState(null, '', page); closeLive(); generation++; selected = null; clearChat(); $('create-pr').hidden = true; $('view-pr').hidden = true; $('stop-task').hidden = true; renderHistory(); $('workspace-title').textContent = 'Todo listo para empezar'; $('task-state').className = 'state neutral'; $('task-state').textContent = 'Sin tarea'; $('run-meta').hidden = true; $('progress').hidden = true; $('result').hidden = true; $('activity-output').hidden = true; $('empty-state').hidden = false; $('activity-count').textContent = '0'; renderDiff(''); showNotice(''); selectTab('activity'); $('prompt').focus(); const pending = history.find(run => ['cloning', 'running', 'stopping'].includes(run.state)); if (pending) { showNotice('Hay una tarea en curso. Selecciónala en Tareas recientes para seguirla.'); selectRun(pending); } });
 $('example').addEventListener('click', () => { if (![...$('repository').options].some(option => option.value === 'https://github.com/octocat/Hello-World')) { const option = document.createElement('option'); option.value = 'https://github.com/octocat/Hello-World'; option.textContent = 'Público · octocat/Hello-World (ejemplo)'; $('repository').append(option); } $('repository').disabled = false; $('repository').value = 'https://github.com/octocat/Hello-World'; $('prompt').value = 'Crea un archivo NOTES.md con un breve resumen del repositorio. Comprueba que el archivo existe. No hagas commit.'; $('prompt').focus(); });
 
 let repositories = [];

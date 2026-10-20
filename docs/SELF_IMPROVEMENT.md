@@ -6,7 +6,7 @@ Repositorio: https://github.com/gilbertsahumada/cf-sandbox-coding
 
 1. Autoriza este repositorio en la GitHub App del runner cuando la conexión esté funcionando.
 2. En la interfaz elige este repositorio, Pi u OpenCode y una tarea acotada.
-3. El agente trabaja sobre un clon aislado y devuelve sus logs, explicación y patch.
+3. El agente trabaja sobre un clon aislado. Responde en el chat de esa tarea para continuar con su contexto y cambios. Los logs y el patch se actualizan en cada turno.
 4. Revisa los cambios y pulsa **Crear PR** para publicar una rama y un borrador desde el Worker. Describe las pruebas realizadas; ejecuta las comprobaciones antes de incorporar la propuesta.
 5. Incorpora los cambios y despliega después de revisarlos. La siguiente tarea clonará la versión actualizada.
 
