@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { continuationReason, activeStates, type Turn, type Checkpoint } from './conversation';
 import { validateChanges, type Proposal, type PullRequest } from './pull-request';
 import { eventFrame } from './event-stream';
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
@@ -6,11 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import { agentCommand, agentEnv, providerConfigs, parseOutcome, type AgentName } from "./agents";
 
 const repositoryDirectory = "/workspace/repo";
-const taskDirectory = "/workspace/task";
-const eventsPath = `${taskDirectory}/stdout.log`;
-const stderrPath = `${taskDirectory}/stderr.log`;
-const exitCodePath = `${taskDirectory}/exit-code`;
-const pidPath = `${taskDirectory}/pid`;
+const taskRoot = "/workspace/task";
 const inactivityTimeout = 30 * 60 * 1000;
 const taskCheckInterval = 60 * 1000;
 const taskKey = "task";
@@ -53,6 +51,14 @@ export type CommandResult = {
 };
 
 export class AgentSandbox extends DurableObject<Env> {
+  private changing = false;
+  private finalizing: Promise<void> | undefined;
+  private get turn() { return this.ctx.storage.kv.get<number>('turn') || 0; }
+  private get taskDirectory() { return this.turn ? `${taskRoot}/turn-${this.turn}` : taskRoot; }
+  private get eventsPath() { return `${this.taskDirectory}/stdout.log`; }
+  private get stderrPath() { return `${this.taskDirectory}/stderr.log`; }
+  private get exitCodePath() { return `${this.taskDirectory}/exit-code`; }
+  private get pidPath() { return `${this.taskDirectory}/pid`; }
   private publishing: Promise<PullRequest> | undefined;
 	private readonly container: Container;
 	private readonly files: Files;
@@ -112,103 +118,179 @@ export class AgentSandbox extends DurableObject<Env> {
         return result;
 	}
 
-	startTask(prompt: string, agent: AgentName): Promise<"started" | "busy"> {
-		return this.ctx.blockConcurrencyWhile(async () => {
-            if (this.ctx.storage.kv.get(taskKey) !== undefined) return "busy";
-            if (!this.ctx.storage.kv.get("repositoryReady")) throw new Error("Clone a repository first");
-            if (!this.container.running) throw new Error("Workspace expired; use a new sandbox");
-            await this.startSandbox();
+    async startTask(prompt: string, agent: AgentName): Promise<'started' | 'busy'> {
+        if (this.changing || this.ctx.storage.kv.get(taskKey) !== undefined) return 'busy';
+        this.changing = true;
+        try {
+            if (!this.ctx.storage.kv.get('repositoryReady')) throw Error('Clone a repository first');
+            if (!this.container.running) throw Error('Workspace expired; use a new sandbox');
+            this.ctx.storage.kv.put('conversationVersion', 1);
+            await this.launchTurn(prompt, agent, crypto.randomUUID());
+            return 'started';
+        } finally { this.changing = false; }
+    }
 
-			if ((await this.taskStatus()).state === "running") {
-				return "busy";
-			}
-
-            await this.files.remove(taskDirectory, { recursive: true, force: true });
-			await this.files.mkdir(taskDirectory);
-            await this.files.mkdir("/workspace/agent-config/pi", { recursive: true });
-            await this.files.writeFile("/workspace/agent-config/pi/models.json", JSON.stringify(providerConfigs(this.env).pi));
-
-			await this.container.exec(
-				[
-					"/bin/sh",
-					"-c",
-					taskScript,
-					"agent",
-					taskDirectory,
-					...agentCommand(agent, prompt, this.env),
-				],
-				{
-					cwd: repositoryDirectory,
-					env: { ...trustEnv, ...agentEnv(agent, this.env), PWD: repositoryDirectory },
-					stdout: "ignore",
-					stderr: "ignore",
-				},
-			);
-
-			this.ctx.storage.kv.put(taskKey, agent);
-            this.ctx.storage.kv.put("startedAt", Date.now());
-			await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
-			return "started";
-		});
-	}
-
-	async alarm(): Promise<void> {
-		if (!this.container.running) {
-			return;
-		}
-
-        const status = await this.taskStatus();
-        if (status.state === "running") {
-            if (Date.now() - (this.ctx.storage.kv.get<number>("startedAt") ?? Date.now()) > 30 * 60_000) {
-                await this.run(['node', '/opt/stop-task.mjs', taskDirectory], '/', {});
-                await this.archiveProposal();
-                const diff = await this.readDiff();
-                if (diff.exitCode === 0) this.saveDiff(diff);
-                this.ctx.storage.kv.put("logs", await this.readLogs());
-                this.ctx.storage.kv.put("result", { state: "failed", error: "Task exceeded 30 minutes" });
-                await this.container.destroy();
-            } else {
-                await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
-            }
-            return;
+    async sendMessage(id: string, prompt: string): Promise<{ turn: number }> {
+        const existing = this.ctx.storage.kv.get<number>(`request:${id}`);
+        if (existing) {
+            if (this.getTurn(existing)?.prompt !== prompt) throw Error('Ese identificador ya pertenece a otro mensaje.');
+            return { turn: existing };
         }
+        if (this.changing || this.publishing) throw Error('Espera a que termine la operación actual.');
+        this.changing = true;
+        try {
+            const status = await this.readTask();
+            const checkpoint = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+            const reason = continuationReason(this.ctx.storage.kv.get('conversationVersion'), status.state, this.container.running, this.turn, checkpoint?.turn);
+            if (reason) throw Error(reason);
+            if (this.turn >= 100) throw Error('Esta conversación alcanzó 100 turnos. Conserva el patch y abre una tarea nueva.');
+            if (!this.container.running || this.ctx.storage.kv.get('workspaceRestorePending')) {
+                if (this.container.running) await this.container.destroy();
+                await this.restoreWorkspace(checkpoint!);
+            }
+            await this.launchTurn(prompt, this.ctx.storage.kv.get<AgentName>(taskKey)!, id);
+            return { turn: this.turn };
+        } finally { this.changing = false; }
+    }
 
-        await this.archiveProposal();
-        this.ctx.storage.kv.put("result", status);
-        this.ctx.storage.kv.put("logs", await this.readLogs());
-        const diff = await this.readDiff();
-        if (diff.exitCode === 0) this.saveDiff(diff);
-        await this.container.setInactivityTimeout(60_000);
-	}
+    private async launchTurn(prompt: string, agent: AgentName, id: string) {
+        await this.startSandbox();
+        const number = this.turn + 1;
+        this.ctx.storage.kv.put('turn', number);
+        this.ctx.storage.kv.put(taskKey, agent);
+        this.ctx.storage.kv.put(`request:${id}`, number);
+        this.putTurn({ number, id, prompt, startedAt: Date.now(), state: 'running' });
+        // Every turn gets fresh output and publication caches; the repository and native session stay intact.
+        for (const key of ['result', 'logs', 'diffChunks', 'proposalChunks', 'proposalError', 'pullRequest', 'stopRequested', 'checkpointError']) this.ctx.storage.kv.delete(key);
+        this.ctx.storage.kv.put('startedAt', Date.now());
+        try {
+            await this.files.mkdir(this.taskDirectory, { recursive: true });
+            await this.files.mkdir('/workspace/conversation', { recursive: true });
+            await this.files.mkdir('/workspace/agent-config/pi', { recursive: true });
+            await this.files.writeFile('/workspace/agent-config/pi/models.json', JSON.stringify(providerConfigs(this.env).pi));
+            await this.container.exec(['/bin/sh', '-c', taskScript, 'agent', this.taskDirectory, ...agentCommand(agent, prompt, this.env)], {
+                cwd: repositoryDirectory, env: { ...trustEnv, ...agentEnv(agent, this.env), PWD: repositoryDirectory }, stdout: 'ignore', stderr: 'ignore',
+            });
+            await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
+        } catch (error) {
+            this.ctx.storage.kv.put('result', { state: 'failed', error: 'No se pudo iniciar el turno. Puedes reintentar enviando otro mensaje.' } satisfies TaskStatus);
+            throw error;
+        }
+    }
+
+    private putTurn(turn: Turn) {
+        const { prompt, response, ...metadata } = turn;
+        const write = (name: string, text: string) => {
+            const count = Math.ceil(text.length / 16000);
+            for (let i = 0; i < count; i++) this.ctx.storage.kv.put(`turn:${turn.number}:${name}:${i}`, text.slice(i * 16000, (i + 1) * 16000));
+            return count;
+        };
+        this.ctx.storage.kv.put(`turn:${turn.number}`, { ...metadata, promptChunks: write('prompt', prompt), responseChunks: response === undefined ? undefined : write('response', response) });
+    }
+
+    private getTurn(number: number): Turn | undefined {
+        const metadata = this.ctx.storage.kv.get<Omit<Turn, 'prompt' | 'response'> & { promptChunks: number; responseChunks?: number }>(`turn:${number}`);
+        if (!metadata) return;
+        const read = (name: string, count: number) => { let text = ''; for (let i = 0; i < count; i++) text += this.ctx.storage.kv.get<string>(`turn:${number}:${name}:${i}`) || ''; return text; };
+        const { promptChunks, responseChunks, ...turn } = metadata;
+        return { ...turn, prompt: read('prompt', promptChunks), response: responseChunks === undefined ? undefined : read('response', responseChunks) };
+    }
+
+    async conversation() {
+        const status = await this.readTask();
+        const checkpoint = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+        const reason = continuationReason(this.ctx.storage.kv.get('conversationVersion'), status.state, this.container.running, this.turn, checkpoint?.turn);
+        const turns: Turn[] = [];
+        for (let i = 1; i <= this.turn; i++) { const turn = this.getTurn(i); if (turn) turns.push(turn); }
+        return { turns, turn: this.turn, state: status.state, canContinue: !reason && this.turn < 100, reason: reason || (this.turn >= 100 ? 'Esta conversación alcanzó el límite de 100 turnos.' : undefined),
+            checkpointSaved: checkpoint?.turn === this.turn, warning: this.ctx.storage.kv.get<string>('checkpointError') };
+    }
+
+    async alarm(): Promise<void> {
+        if (this.changing || this.publishing) { await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval); return; }
+        if (!this.container.running) return;
+        const status = await this.readTask();
+        if (status.state === 'running') {
+            if (Date.now() - (this.ctx.storage.kv.get<number>('startedAt') || Date.now()) > 30 * 60_000) {
+                await this.run(['node', '/opt/stop-task.mjs', this.taskDirectory], '/', {});
+                await this.finishTurn({ state: 'failed', error: 'Este turno superó 30 minutos.' });
+                await this.container.destroy();
+            } else await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
+        }
+    }
 
     async stopTask(): Promise<{ state: TaskStatus['state']; containerRunning: boolean }> {
-        return this.ctx.blockConcurrencyWhile(async () => {
+        if (this.changing || this.publishing) throw Error('Espera a que termine la operación actual.');
+        this.changing = true;
+        try {
             const original = await this.readTask();
-            const active = ['running', 'stopping'].includes(original.state);
+            const active = activeStates.includes(original.state);
             if (active) this.ctx.storage.kv.put('stopRequested', true);
             await this.ctx.storage.deleteAlarm();
-            try {
-                if (this.container.running) {
-                    if (active) {
-                        // Only signal the agent's own process group from this container boot.
-                        await this.run(['node', '/opt/stop-task.mjs', taskDirectory], '/', {}).catch(() => {});
-                    }
-                    try { this.ctx.storage.kv.put('logs', await this.readLogs()); } catch { console.warn('Could not archive logs before shutdown'); }
-                    await this.archiveProposal();
-                    try { const diff = await this.readDiff(); if (diff.exitCode === 0) this.saveDiff(diff); } catch { console.warn('Could not archive changes before shutdown'); }
-                    await this.container.destroy();
+            if (this.container.running) {
+                if (active) {
+                    const stopped = await this.run(['node', '/opt/stop-task.mjs', this.taskDirectory], '/', {});
+                    if (stopped.exitCode !== 0) throw Error('No pudimos detener el proceso de forma segura.');
                 }
-                if (active) this.ctx.storage.kv.put('result', { state: 'cancelled', error: 'Task stopped by user' } satisfies TaskStatus);
-                else if (original.state !== 'none') this.ctx.storage.kv.put('result', original);
-                this.ctx.storage.kv.delete('stopRequested');
-            } catch (error) {
-                this.ctx.storage.kv.delete('stopRequested');
-                if (active) await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
-                throw error;
+                await this.finishTurn(active ? { state: 'cancelled', error: 'Task stopped by user' } : original);
+                await this.container.destroy();
             }
-            const status = await this.readTask();
-            return { state: status.state, containerRunning: this.container.running };
-        });
+            this.ctx.storage.kv.delete('stopRequested');
+            return { state: (await this.readTask()).state, containerRunning: this.container.running };
+        } catch (error) {
+            this.ctx.storage.kv.delete('stopRequested');
+            if (this.container.running) await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
+            throw error;
+        } finally { this.changing = false; }
+    }
+
+    private async finishTurn(status: TaskStatus) {
+        if (['none', 'running', 'stopping'].includes(status.state)) return;
+        if (this.finalizing) return this.finalizing;
+        if (this.ctx.storage.kv.get<number>('finishedTurn') === this.turn && this.ctx.storage.kv.get('result')) return;
+        this.finalizing = (async () => {
+            this.ctx.storage.kv.put('result', status);
+            const turn = this.getTurn(this.turn);
+            if (turn) this.putTurn({ ...turn, state: status.state, finishedAt: Date.now(), response: 'result' in status ? status.result : 'error' in status ? status.error : 'El entorno se perdió.' });
+            if (this.container.running) {
+                try { this.ctx.storage.kv.put('logs', await this.readLogs()); } catch { console.warn('Could not archive logs'); }
+                try { const diff = await this.readDiff(); if (!diff.exitCode) this.saveDiff(diff); } catch { console.warn('Could not archive diff'); }
+                await this.archiveProposal();
+                if (this.ctx.storage.kv.get('conversationVersion')) {
+                    try {
+                        const saved = await this.run(['node', '/opt/workspace-checkpoint.mjs', 'save'], '/', {});
+                        if (saved.exitCode !== 0) throw Error(saved.stderr || 'No se pudo guardar el entorno.');
+                        const old = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+                        const generation = crypto.randomUUID(), count = Math.ceil(saved.stdout.length / 50000);
+                        for (let i = 0; i < count; i++) this.ctx.storage.kv.put(`checkpoint:${generation}:${i}`, saved.stdout.slice(i * 50000, (i + 1) * 50000));
+                        this.ctx.storage.kv.put('checkpoint', { generation, count, turn: this.turn, digest: createHash('sha256').update(saved.stdout).digest('hex') } satisfies Checkpoint);
+                        if (old) for (let i = 0; i < old.count; i++) this.ctx.storage.kv.delete(`checkpoint:${old.generation}:${i}`);
+                    } catch (error) { this.ctx.storage.kv.put('checkpointError', error instanceof Error ? error.message : 'No se pudo guardar el entorno.'); }
+                }
+                const safe = !this.ctx.storage.kv.get('conversationVersion') || this.ctx.storage.kv.get<Checkpoint>('checkpoint')?.turn === this.turn;
+                await this.container.setInactivityTimeout(safe ? 60_000 : inactivityTimeout);
+            }
+            this.ctx.storage.kv.put('finishedTurn', this.turn);
+        })();
+        try { await this.finalizing; } finally { this.finalizing = undefined; }
+    }
+
+    private async restoreWorkspace(checkpoint: Checkpoint) {
+        let encoded = '';
+        for (let i = 0; i < checkpoint.count; i++) encoded += this.ctx.storage.kv.get<string>(`checkpoint:${checkpoint.generation}:${i}`) || '';
+        if (createHash('sha256').update(encoded).digest('hex') !== checkpoint.digest) throw Error('El punto de recuperación está incompleto. No se reinició la conversación.');
+        this.ctx.storage.kv.put('workspaceRestorePending', true);
+        try {
+            await this.startSandbox();
+            await this.files.writeFile('/workspace/checkpoint.b64', encoded);
+            const restored = await this.run(['node', '/opt/workspace-checkpoint.mjs', 'restore', '/workspace/checkpoint.b64'], '/', {});
+            if (restored.exitCode) throw Error('Restore failed');
+            await this.files.remove('/workspace/checkpoint.b64', { force: true });
+            this.ctx.storage.kv.delete('workspaceRestorePending');
+        } catch {
+            if (this.container.running) await this.container.destroy();
+            throw Error('No se pudo recuperar el entorno. El punto guardado se conserva; puedes reintentar.');
+        }
     }
 
     private async archiveProposal(): Promise<void> {
@@ -243,6 +325,7 @@ export class AgentSandbox extends DurableObject<Env> {
     }
 
     async createPullRequest(taskId: string, title: string, description: string): Promise<PullRequest> {
+        if (this.changing) throw Error('Espera a que termine la operación actual.');
         if (this.publishing) return this.publishing;
         this.publishing = (async () => {
             const status = await this.pullRequestStatus();
@@ -255,14 +338,16 @@ export class AgentSandbox extends DurableObject<Env> {
                 baseCommit: this.ctx.storage.kv.get<string>('baseCommit')!, baseBranch: this.ctx.storage.kv.get<string>('baseBranch')! };
             const grant = this.ctx.storage.kv.get<RepositoryGrant>('githubGrant')!;
             const body = `${description}\n\n---\nCreated from sandbox task \`${taskId}\` (${this.ctx.storage.kv.get<string>(taskKey)}).\nStatus: ${ (await this.readTask()).state }.\nTests: review the task activity; checks have not been independently verified.\nBase commit: \`${proposal.baseCommit}\`.\n\nThis draft requires review before merging.`;
-            const pr = await this.env.GITHUB.getByName('owner').createPullRequest(grant, taskId, proposal, title, body);
+            const pr = await this.env.GITHUB.getByName('owner').createPullRequest(grant, this.turn > 1 ? `${taskId}-turn-${this.turn}` : taskId, proposal, title, body);
             this.ctx.storage.kv.put('pullRequest', pr);
             return pr;
         })();
         try { return await this.publishing; } finally { this.publishing = undefined; }
     }
 
-    async streamEvents(cursor: string): Promise<Response> {
+    async streamEvents(cursor: string, expectedTurn?: number): Promise<Response> {
+        const observedTurn = this.turn;
+        const observedDirectory = this.taskDirectory;
         const status = await this.readTask();
         const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
         const writer = writable.getWriter();
@@ -281,9 +366,12 @@ export class AgentSandbox extends DurableObject<Env> {
         const send = (type: string, data: unknown) => writer.write(eventFrame(type, data));
         const pump = async () => {
             try {
+                if (this.turn !== observedTurn) { await send('turn', { turn: this.turn }); return; }
+                await send('turn', { turn: observedTurn });
+                if (expectedTurn !== undefined && expectedTurn !== observedTurn) return;
                 await send('status', status);
                 if (this.container.running && this.ctx.storage.kv.get(taskKey)) {
-                    observer = await this.container.exec(['node', '/opt/follow-task.mjs', taskDirectory, cursor], { cwd: '/', stderr: 'ignore' });
+                    observer = await this.container.exec(['node', '/opt/follow-task.mjs', observedDirectory, cursor], { cwd: '/', stderr: 'ignore' });
                     void observer.exitCode.then(() => { exited = true; }, () => { exited = true; });
                     if (disconnected) { stopObserver(); return; }
                     if (!observer.stdout) throw Error('Missing observer output');
@@ -307,12 +395,14 @@ export class AgentSandbox extends DurableObject<Env> {
                     if (logs?.stderr) await send('stderr', logs.stderr);
                 }
                 const final = await this.readTask();
+                if (this.turn !== observedTurn) { await send('turn', { turn: this.turn }); return; }
                 await send('status', final);
                 if (!['running', 'stopping'].includes(final.state)) await send('done', {});
             } catch (error) {
                 if (!disconnected) {
                     console.warn('Log observer interrupted', error instanceof Error ? error.message : 'unknown');
                     try {
+                        if (this.turn !== observedTurn) { await send('turn', { turn: this.turn }); return; }
                         const final = await this.readTask();
                         await send('status', final);
                         if (!['running', 'stopping'].includes(final.state)) await send('done', {});
@@ -329,25 +419,22 @@ export class AgentSandbox extends DurableObject<Env> {
         return new Response(readable, { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
     }
 
-	async readTask(): Promise<TaskStatus> {
+    async readTask(): Promise<TaskStatus> {
         if (this.ctx.storage.kv.get('stopRequested')) return { state: 'stopping' };
-        const result = this.ctx.storage.kv.get<TaskStatus>("result");
-        if (result) return result;
-		if (!this.container.running) {
-			return this.ctx.storage.kv.get(taskKey) === undefined
-				? { state: "none" }
-				: { state: "lost" };
-		}
-
-		return this.taskStatus();
-	}
+        const saved = this.ctx.storage.kv.get<TaskStatus>('result');
+        const status: TaskStatus = saved || (!this.container.running
+            ? this.ctx.storage.kv.get(taskKey) === undefined ? { state: 'none' } : { state: 'lost' }
+            : await this.taskStatus());
+        await this.finishTurn(status);
+        return status;
+    }
 
     async readLogs(): Promise<{ stdout: string; stderr: string }> {
         const saved = this.ctx.storage.kv.get<{ stdout: string; stderr: string }>("logs");
         if (saved) return saved;
         if (!this.container.running) return { stdout: "", stderr: "Workspace is no longer running" };
-        const stdout = await this.run(["tail", "-c", "32000", eventsPath], "/", {});
-        const stderr = await this.run(["tail", "-c", "32000", stderrPath], "/", {});
+        const stdout = await this.run(["tail", "-c", "32000", this.eventsPath], "/", {});
+        const stderr = await this.run(["tail", "-c", "32000", this.stderrPath], "/", {});
         return { stdout: stdout.stdout, stderr: stderr.stdout };
     }
 
@@ -413,13 +500,13 @@ export class AgentSandbox extends DurableObject<Env> {
 	}
 
 	private async taskStatus(): Promise<TaskStatus> {
-		const exitCode = await this.readOptionalText(exitCodePath);
+		const exitCode = await this.readOptionalText(this.exitCodePath);
 
 		if (exitCode !== undefined) {
 			return this.outcome(Number.parseInt(exitCode, 10));
 		}
 
-		const pid = await this.readOptionalText(pidPath);
+		const pid = await this.readOptionalText(this.pidPath);
 
 		if (pid === undefined) {
 			// The task writes its process ID right after it starts.
@@ -429,7 +516,7 @@ export class AgentSandbox extends DurableObject<Env> {
 		}
 
 		const probe = await this.run(
-			["/bin/sh", "-c", taskRunningScript, "probe", pidPath],
+			["/bin/sh", "-c", taskRunningScript, "probe", this.pidPath],
 			"/",
 			{},
 		);
@@ -440,7 +527,7 @@ export class AgentSandbox extends DurableObject<Env> {
 
 		// The task can finish after the first read, so read the exit code
 		// again.
-		const lateExitCode = await this.readOptionalText(exitCodePath);
+		const lateExitCode = await this.readOptionalText(this.exitCodePath);
 
 		if (lateExitCode !== undefined) {
 			return this.outcome(Number.parseInt(lateExitCode, 10));
@@ -452,8 +539,8 @@ export class AgentSandbox extends DurableObject<Env> {
 	private async outcome(exitCode: number): Promise<TaskStatus> {
         const agent = this.ctx.storage.kv.get<AgentName>(taskKey);
         if (!agent) return { state: "lost" };
-        const events = await this.files.readFile(eventsPath);
-        return parseOutcome(agent, exitCode, readLines(events.body), (await this.readOptionalText(stderrPath)) ?? "");
+        const events = await this.files.readFile(this.eventsPath);
+        return parseOutcome(agent, exitCode, readLines(events.body), (await this.readOptionalText(this.stderrPath)) ?? "");
     }
 
 	private async readOptionalText(path: string): Promise<string | undefined> {

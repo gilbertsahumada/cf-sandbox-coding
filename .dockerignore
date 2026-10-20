@@ -7,3 +7,4 @@
 !container/opencode-events.mjs
 
 !container/export-changes.mjs
+!container/workspace-checkpoint.mjs

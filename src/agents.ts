@@ -7,7 +7,7 @@ export type AgentConfig = { MODEL_BASE_URL: string; MODEL_ID: string; MODEL_API:
 
 export function agentCommand(agent: AgentName, prompt: string, config: AgentConfig): string[] {
   return agent === "pi"
-    ? ["pi", "--mode", "json", "--no-session", "--provider", "custom", "--model", config.MODEL_ID, "--", prompt]
+    ? ["pi", "--mode", "json", "--session-id", "task", "--session-dir", "/workspace/conversation/pi", "--provider", "custom", "--model", config.MODEL_ID, "--", prompt]
     : ["node", "/opt/opencode-task.mjs", config.MODEL_ID, prompt];
 }
 
@@ -28,6 +28,7 @@ export function agentEnv(agent: AgentName, config: AgentConfig): Record<string, 
   return agent === "pi" ? {
     PI_CODING_AGENT_DIR: "/workspace/agent-config/pi", PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
   } : {
+    XDG_DATA_HOME: "/workspace/conversation/data", XDG_STATE_HOME: "/workspace/conversation/state",
     OPENCODE_CONFIG_CONTENT: JSON.stringify(providerConfigs(config).opencode),
     OPENCODE_DISABLE_MODELS_FETCH: "1", OPENCODE_DISABLE_AUTOUPDATE: "1",
     OPENCODE_DISABLE_DEFAULT_PLUGINS: "1", OPENCODE_DISABLE_LSP_DOWNLOAD: "1", OPENCODE_DISABLE_SHARE: "1",

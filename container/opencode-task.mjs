@@ -1,3 +1,4 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { openCodeEvents } from './opencode-events.mjs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -58,10 +59,21 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!ready) throw new Error('OpenCode server did not become ready');
-  const session = await request('/session', { permission: [
-    { permission: '*', pattern: '*', action: 'allow' },
-    ...['question', 'plan_enter', 'plan_exit'].map(permission => ({ permission, pattern: '*', action: 'deny' })),
-  ] });
+  const sessionFile = process.env.OPENCODE_SESSION_FILE || '/workspace/conversation/opencode-session.json';
+  let session;
+  try {
+    const saved = JSON.parse(await readFile(sessionFile, 'utf8'));
+    if (!/^ses_[a-zA-Z0-9]+$/.test(saved.id)) throw Error('Invalid saved OpenCode session');
+    session = await request(`/session/${saved.id}`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    session = await request('/session', { permission: [
+      { permission: '*', pattern: '*', action: 'allow' },
+      ...['question', 'plan_enter', 'plan_exit'].map(permission => ({ permission, pattern: '*', action: 'deny' })),
+    ] });
+    await mkdir(sessionFile.slice(0, sessionFile.lastIndexOf('/')), { recursive: true });
+    await writeFile(sessionFile, JSON.stringify({ id: session.id }), { mode: 0o600 });
+  }
   let markReady, failReady;
   const subscribed = new Promise((resolve, reject) => { markReady = resolve; failReady = reject; });
   const events = followEvents(session.id, markReady).catch(error => { failReady(error); if (error.name !== 'AbortError') console.error('Live events unavailable:', error.message); });
