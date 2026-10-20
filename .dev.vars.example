@@ -1,0 +1,3 @@
+# Copia a .dev.vars para desarrollo. No guardes claves en Git.
+MODEL_API_KEY=
+RUNNER_API_TOKEN=

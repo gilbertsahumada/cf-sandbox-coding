@@ -1,0 +1,13 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+dist/
+.env.*
+!.env.example
+.dev.vars.*
+!.dev.vars.example
+verification/
+.DS_Store
+*.pem
+*.key
