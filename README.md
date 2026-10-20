@@ -111,6 +111,7 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | POST | `/sandboxes/:id/repository` | URL pública o `{ "installationId": 123, "repositoryId": 456, "ref": "main" }`; `ref` opcional |
 | POST | `/sandboxes/:id/task` | JSON `{ "agent": "pi", "prompt": "..." }`; también acepta `opencode` |
 | GET | `/sandboxes/:id/task` | `none`, `running`, `lost`, `succeeded` o `failed` |
+| DELETE | `/sandboxes/:id/task` | Detener el contenedor y sus tareas; conserva resultados ya archivados y elimina la alarma de seguimiento |
 | GET | `/sandboxes/:id/logs` | Últimos 32 KB de stdout y stderr |
 | GET | `/sandboxes/:id/diff` | Patch Git, incluidos archivos nuevos y binarios |
 

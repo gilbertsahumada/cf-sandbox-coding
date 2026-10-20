@@ -83,6 +83,7 @@ export default {
         const state = await sandbox.startTask(parsed.data.prompt, parsed.data.agent);
         return Response.json({ state }, { status: state === "started" ? 202 : 409 });
       }
+      if (resource === "task" && request.method === "DELETE") return Response.json(await sandbox.stopTask());
       if (resource === "task" && request.method === "GET") return Response.json(await sandbox.readTask());
       if (resource === "logs" && request.method === "GET") return Response.json(await sandbox.readLogs());
       if (resource === "diff" && request.method === "GET") {
