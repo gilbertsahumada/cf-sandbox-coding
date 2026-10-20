@@ -19,7 +19,7 @@ const Repository = z.object({
 }).refine(value => Boolean(value.url) !== Boolean(value.installationId && value.repositoryId), "Choose a repository or provide a public URL");
 const Task = z.object({ agent: Agent, prompt: z.string().trim().min(1).max(32_000) });
 const bodyLimit = 96 * 1024;
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, limit = bodyLimit): Promise<unknown> {
   if (!request.body) return null;
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -28,7 +28,7 @@ async function readJson(request: Request): Promise<unknown> {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > bodyLimit) { await reader.cancel(); throw new RangeError("Request too large"); }
+    if (size > limit) { await reader.cancel(); throw new RangeError("Request too large"); }
     chunks.push(value);
   }
   const bytes = new Uint8Array(size);
@@ -48,6 +48,12 @@ export default {
       headers.set("x-content-type-options", "nosniff");
       headers.set("referrer-policy", "no-referrer");
       headers.set("cache-control", "no-cache");
+      if (path === '/' && request.method === 'GET' && response.status === 200) {
+        const nonce = crypto.randomUUID();
+        headers.set('content-security-policy', headers.get('content-security-policy')!.replace("style-src 'self'", `style-src 'self' 'nonce-${nonce}'`));
+        headers.set('cache-control', 'no-store'); headers.delete('content-length'); headers.delete('etag');
+        return new Response((await response.text()).replace('</head>', `<meta name="csp-nonce" content="${nonce}"></head>`), { status: response.status, headers });
+      }
       return new Response(response.body, { status: response.status, headers });
     }
     if (!env.RUNNER_API_TOKEN) return new Response("Runner authentication is not configured", { status: 503 });
@@ -64,12 +70,34 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
     if (new URL(request.url).pathname === "/health" && request.method === "GET") return Response.json({ ok: true, agents: ["pi", "opencode"] });
-    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages)$/.exec(new URL(request.url).pathname);
+    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages|files|file)$/.exec(new URL(request.url).pathname);
     if (!match) return new Response("Not found", { status: 404 });
     if (!env.MODEL_BASE_URL || !env.MODEL_ID || !env.MODEL_API_KEY) return new Response("Configure model endpoint, model ID and API key first", { status: 503 });
     const [, name, resource] = match;
     const sandbox = env.SANDBOX.getByName(name);
     try {
+      if (resource === 'files' || resource === 'file') {
+        const headers = { 'cache-control': 'no-store' };
+        const url = new URL(request.url);
+        try {
+          let result;
+          if (request.method === 'GET') {
+            const path = url.searchParams.get('path') || '';
+            const cursor = Number(url.searchParams.get('cursor') || '0');
+            if (path.length > 2048 || !Number.isSafeInteger(cursor) || cursor < 0) return Response.json({ message: 'Invalid repository path or cursor.' }, { status: 400, headers });
+            result = await sandbox.repositoryFiles(resource === 'files' ? 'list' : 'read', path, cursor);
+          } else if (resource === 'file' && request.method === 'PUT') {
+            const parsed = z.object({ path: z.string().min(1).max(2048), content: z.string().max(256 * 1024), version: z.string().regex(/^[a-f0-9]{64}$/) }).safeParse(await readJson(request, 2 * 1024 * 1024));
+            if (!parsed.success) return Response.json({ message: 'Choose a text file up to 256 KB with its current version.' }, { status: 400, headers });
+            result = await sandbox.repositoryFiles('write', parsed.data.path, 0, parsed.data.content, parsed.data.version);
+          } else return new Response('Method not allowed', { status: 405 });
+          if (result.error) return Response.json({ message: result.error }, { status: result.status || 409, headers });
+          return Response.json(result, { headers });
+        } catch (error) {
+          if (error instanceof RangeError) return Response.json({ message: 'File request is too large.' }, { status: 413, headers });
+          return Response.json({ message: error instanceof Error ? error.message : 'Could not access repository files.' }, { status: 409, headers });
+        }
+      }
       if (resource === 'messages') {
         const headers = { 'cache-control': 'no-store' };
         if (request.method === 'GET') return Response.json(await sandbox.conversation(), { headers });

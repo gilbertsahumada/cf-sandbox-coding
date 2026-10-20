@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { extname, resolve } from "node:path";
@@ -52,6 +53,34 @@ new file mode 100644
 +  return \`cloud-session:\${id}\`;
 +}
 `;
+const seedFiles = new Map([
+  [
+    "web/App.tsx",
+    `import { useState } from 'react';
+import { AgentChat } from './chat';
+
+export default function App() {
+  const [session, setSession] = useState('cloud');
+  return <main><AgentChat session={session}/></main>;
+}
+`,
+  ],
+  [
+    "web/styles.css",
+    ":root { color-scheme: dark; }\n.workspace { display: flex; min-height: 100vh; }\n",
+  ],
+  [
+    "web/lib/session.ts",
+    'export const session = { status: "ready", cloud: true };\n',
+  ],
+  ["README.md", "# Sandbox\n\nA cloud workspace for Pi and OpenCode.\n"],
+  ["package.json", '{"name":"sandbox","private":true}\n'],
+  [
+    "src/worker.ts",
+    'export default { fetch() { return new Response("Ready"); } };\n',
+  ],
+]);
+const versionOf = (text) => createHash("sha256").update(text).digest("hex");
 const tasks = new Map([
   [
     initial,
@@ -65,12 +94,13 @@ const tasks = new Map([
           prompt:
             "Arrange the interface as an editor: sessions, changes, and agent chat. Keep the GitHub connection.",
           response:
-            "The workspace layout is ready. Session navigation, change review, and conversation now have dedicated panels.\n\nTask recovery and live logs are preserved. Review the three changed files in the center panel.\n\nWould you like to adjust the chat panel next?",
+            '## Workspace updated\n\nThe session now keeps **your files and agent context** together.\n\n- Browse the repository in Files.\n- Edit code and save it to the cloud.\n- Review the accumulated diff before creating a PR.\n\n```tsx\nexport default function App() {\n  return <Workspace session="cloud" />;\n}\n```\n\n| Check | Result |\n| --- | --- |\n| TypeScript | Passed |\n| Session recovery | Preserved |\n\nNext, open `web/App.tsx` and adjust the layout.',
           state: "succeeded",
           startedAt: Date.now() - 120000,
         },
       ],
       patch,
+      files: new Map(seedFiles),
     },
   ],
 ]);
@@ -161,6 +191,7 @@ createServer(async (req, res) => {
     let task = tasks.get(id);
     if (resource === "repository") {
       tasks.set(id, {
+        files: new Map(seedFiles),
         agent: id.startsWith("pi") ? "pi" : "opencode",
         state: "none",
         turns: [],
@@ -169,6 +200,81 @@ createServer(async (req, res) => {
       return json({ exitCode: 0 }, 201);
     }
     if (!task) return json({ state: "none" });
+    if (resource === "files" || resource === "file") {
+      task.files ||= new Map(seedFiles);
+      const path = url.searchParams.get("path") || "";
+      if (resource === "files") {
+        const entries = new Map();
+        for (const key of task.files.keys()) {
+          if (path && !key.startsWith(path + "/")) continue;
+          const rest = path ? key.slice(path.length + 1) : key;
+          const name = rest.split("/")[0];
+          entries.set(name, {
+            name,
+            path: path ? path + "/" + name : name,
+            kind: rest.includes("/") ? "directory" : "file",
+          });
+        }
+        return json({
+          path,
+          entries: [...entries.values()].sort(
+            (a, b) =>
+              Number(b.kind === "directory") - Number(a.kind === "directory") ||
+              a.name.localeCompare(b.name),
+          ),
+          nextCursor: null,
+        });
+      }
+      if (req.method === "PUT") {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const data = JSON.parse(body);
+        if (task.state === "running")
+          return json(
+            {
+              message:
+                "Stop the agent or wait for it to finish before saving files.",
+            },
+            409,
+          );
+        const current = task.files.get(data.path);
+        if (current === undefined)
+          return json({ message: "File no longer exists." }, 404);
+        if (versionOf(current) !== data.version && current !== data.content)
+          return json(
+            {
+              message:
+                "This file changed in the cloud. Reload it before saving; your draft has been kept.",
+            },
+            409,
+          );
+        task.files.set(data.path, data.content);
+        const baseline = seedFiles.get(data.path) ?? current;
+        const header = `diff --git a/${data.path} b/${data.path}\n`;
+        task.patch = task.patch.split(/(?=^diff --git )/m).filter(part => !part.startsWith(header)).join("") + `diff --git a/${data.path} b/${data.path}\n--- a/${data.path}\n+++ b/${data.path}\n@@ -1,${baseline.split("\n").length} +1,${data.content.split("\n").length} @@\n${baseline
+          .split("\n")
+          .map((line) => "-" + line)
+          .join("\n")}\n${data.content
+          .split("\n")
+          .map((line) => "+" + line)
+          .join("\n")}\n`;
+        return json({
+          path: data.path,
+          version: versionOf(data.content),
+          changed: true,
+          checkpointSaved: true,
+        });
+      }
+      const content = task.files.get(path);
+      if (content === undefined)
+        return json({ message: "File no longer exists." }, 404);
+      return json({
+        path,
+        content,
+        version: versionOf(content),
+        bytes: Buffer.byteLength(content),
+      });
+    }
     if (resource === "task" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
@@ -310,12 +416,22 @@ createServer(async (req, res) => {
       ".woff": "font/woff",
       ".svg": "image/svg+xml",
     }[extname(file)] || "application/octet-stream";
+  const nonce = randomUUID();
   res.writeHead(200, {
     "content-type": type,
-    "content-security-policy":
-      "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com",
+    "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com`,
   });
-  res.end(readFileSync(file));
+  const bytes = readFileSync(file);
+  res.end(
+    type === "text/html"
+      ? bytes
+          .toString()
+          .replace(
+            "</head>",
+            `<meta name="csp-nonce" content="${nonce}"></head>`,
+          )
+      : bytes,
+  );
 }).listen(8795, "127.0.0.1", () =>
   console.log("Simulated editor: http://127.0.0.1:8795/?task=pi-editor-demo"),
 );

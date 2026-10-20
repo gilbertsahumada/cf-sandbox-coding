@@ -1,5 +1,7 @@
 import {
   memo,
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -97,6 +99,12 @@ import {
   PublishDialog,
   SettingsDialog,
 } from "@/components/session-dialogs";
+import {
+  useWorkspace,
+  type Workspace as RepositoryWorkspace,
+} from "@/hooks/use-workspace";
+import { FileExplorer } from "@/components/file-explorer";
+import { RepositoryEditor } from "@/components/repository-editor";
 import { useRunner, type Runner } from "@/hooks/use-runner";
 import { cn } from "@/lib/utils";
 import {
@@ -105,6 +113,14 @@ import {
   type ChangedFile,
 } from "@/lib/editor";
 import { agentNames, isActive, stateNames } from "@/lib/types";
+const MarkdownResponse = lazy(() =>
+  import("@/components/markdown-response").then(module => ({ default: module.MarkdownResponse })),
+);
+function AgentResponse({ text }: { text: string }) {
+  return <Suspense fallback={<p className="editor-hint">Loading response…</p>}>
+    <MarkdownResponse text={text} />
+  </Suspense>;
+}
 function IconButton({
   icon: Icon,
   label,
@@ -141,7 +157,11 @@ function SessionSidebar({
   newSession,
   settings,
   close,
+  workspace,
+  openSource,
 }: {
+  workspace: RepositoryWorkspace;
+  openSource: (path: string) => void;
   runner: Runner;
   files: ChangedFile[];
   activePath: string | null;
@@ -174,57 +194,68 @@ function SessionSidebar({
           <Plus data-icon="inline-start" />
           New session
         </Button>
-        <InputGroup>
-          <InputGroupInput
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <InputGroupAddon>
-            <Search aria-hidden="true" />
-          </InputGroupAddon>
-        </InputGroup>
       </div>
-      <div className="section-heading">
-        <ChevronDown className="size-3.5" />
-        <h3>Recent sessions</h3>
-        <Badge variant="secondary">{runner.runs.length}</Badge>
-      </div>
-      <div className="session-list">
-        <nav aria-label="Recent sessions">
-          {matches.map((run) => (
-            <Button
-              key={run.id}
-              variant={runner.selected?.id === run.id ? "secondary" : "ghost"}
-              className="session-entry"
-              onClick={() => runner.activate(run.id)}
-              aria-current={runner.selected?.id === run.id ? "page" : undefined}
-            >
-              <TaskStateIcon state={run.state} data-icon="inline-start" />
-              <span className="session-entry-copy">
-                <strong className="truncate">
-                  {run.repository
-                    .replace("https://github.com/", "")
-                    .replace(/\.git$/, "")}
-                </strong>
-                <span>
-                  {agentNames[run.agent]}
-                  <span className="entry-separator" />
-                  {stateNames[run.state]}
-                </span>
-              </span>
-            </Button>
-          ))}
-          {!matches.length ? (
-            <p className="sidebar-empty">
-              {search
-                ? "No matching sessions."
-                : "Your sessions will appear here."}
-            </p>
-          ) : null}
-        </nav>
-      </div>
+      <FileExplorer workspace={workspace} onOpen={openSource} />
+      <Collapsible className="recent-sessions">
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="section-toggle">
+            <ChevronRight data-icon="inline-start" />
+            Sessions<Badge variant="secondary">{runner.runs.length}</Badge>
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          {" "}
+          <InputGroup>
+            <InputGroupInput
+              aria-label="Search sessions"
+              placeholder="Search sessions…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <InputGroupAddon>
+              <Search aria-hidden="true" />
+            </InputGroupAddon>
+          </InputGroup>{" "}
+          <div className="session-list">
+            <nav aria-label="Recent sessions">
+              {matches.map((run) => (
+                <Button
+                  key={run.id}
+                  variant={
+                    runner.selected?.id === run.id ? "secondary" : "ghost"
+                  }
+                  className="session-entry"
+                  onClick={() => runner.activate(run.id)}
+                  aria-current={
+                    runner.selected?.id === run.id ? "page" : undefined
+                  }
+                >
+                  <TaskStateIcon state={run.state} data-icon="inline-start" />
+                  <span className="session-entry-copy">
+                    <strong className="truncate">
+                      {run.repository
+                        .replace("https://github.com/", "")
+                        .replace(/\.git$/, "")}
+                    </strong>
+                    <span>
+                      {agentNames[run.agent]}
+                      <span className="entry-separator" />
+                      {stateNames[run.state]}
+                    </span>
+                  </span>
+                </Button>
+              ))}
+              {!matches.length ? (
+                <p className="sidebar-empty">
+                  {search
+                    ? "No matching sessions."
+                    : "Your sessions will appear here."}
+                </p>
+              ) : null}
+            </nav>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
       <Separator />
       <div className="section-heading">
         <ChevronDown className="size-3.5" />
@@ -278,10 +309,6 @@ function SessionSidebar({
             : "Connect GitHub"}
           <ChevronRight data-icon="inline-end" />
         </Button>
-        <div className="sidebar-caption">
-          <Cloud className="size-3.5" />
-          Sessions in Cloudflare Sandbox
-        </div>
       </div>
     </aside>
   );
@@ -325,7 +352,16 @@ function ActivityPanel({
   toggle: () => void;
 }) {
   const [follow, setFollow] = useState(true);
+  const [activityTab, setActivityTab] = useState("tools");
+  const responseRef = useRef<HTMLDivElement>(null);
+  const response =
+    runner.liveText ?? runner.conversation?.turns.at(-1)?.response ?? "";
+  useEffect(() => {
+    if (follow && runner.selected && isActive(runner.selected.state) && responseRef.current)
+      responseRef.current.scrollTop = responseRef.current.scrollHeight;
+  }, [response, follow, activityTab, runner.selected?.state]);
   return (
+    <Tabs value={activityTab} onValueChange={setActivityTab} className="activity-root">
     <Collapsible open={expanded} onOpenChange={toggle} asChild>
       <section
         className={cn("activity-panel", !expanded && "collapsed")}
@@ -334,7 +370,14 @@ function ActivityPanel({
         <div className="panel-heading">
           <span className="activity-heading">
             <SquareTerminal className="size-3.5" />
-            Activity<Badge variant="secondary">{runner.activityCount}</Badge>
+
+              <TabsList variant="line" aria-label="Activity view">
+                <TabsTrigger value="tools">
+                  Tools<Badge variant="secondary">{runner.activityCount}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="response">Response</TabsTrigger>
+              </TabsList>
+
           </span>
           <div className="flex items-center gap-1">
             <span className="stream-label" role="status">
@@ -379,15 +422,27 @@ function ActivityPanel({
           className="activity-scroll"
           hidden={!expanded}
         >
-          <div
+          <TabsContent value="tools" forceMount hidden={activityTab !== "tools"} className="activity-content"><div
             className="activity-output"
             ref={runner.activityRef}
             tabIndex={0}
             aria-label="Execution logs"
           />
+          </TabsContent>{activityTab === "response" ? (
+            <TabsContent value="response" className="activity-response" ref={responseRef}>
+              {response ? (
+                <AgentResponse text={response} />
+              ) : (
+                <p className="editor-hint">
+                  The agent response will appear here.
+                </p>
+              )}
+            </TabsContent>
+          ) : null}
         </CollapsibleContent>
       </section>
     </Collapsible>
+    </Tabs>
   );
 }
 function Workspace({
@@ -399,7 +454,9 @@ function Workspace({
   publish,
   logsExpanded,
   setLogsExpanded,
+  workspace,
 }: {
+  workspace: RepositoryWorkspace;
   runner: Runner;
   files: ChangedFile[];
   activePath: string | null;
@@ -429,6 +486,19 @@ function Workspace({
     <main className="code-workspace" aria-label="Code review">
       <div className="editor-toolbar">
         <div className="editor-breadcrumb">
+          <ToggleGroup
+            type="single"
+            value={workspace.mode}
+            onValueChange={(value) => {
+              if (value) workspace.setMode(value as "code" | "changes");
+            }}
+            aria-label="Editor mode"
+            variant="outline"
+            spacing={0}
+          >
+            <ToggleGroupItem value="code">Code</ToggleGroupItem>
+            <ToggleGroupItem value="changes">Changes</ToggleGroupItem>
+          </ToggleGroup>
           <GitBranch className="size-3.5" />
           <span className="truncate">
             {runner.selected?.ref ||
@@ -493,7 +563,9 @@ function Workspace({
           ) : null}
         </div>
       </div>
-      {file ? (
+      {workspace.mode === "code" ? (
+        <RepositoryEditor workspace={workspace} runner={runner} />
+      ) : file ? (
         <Tabs
           value={file.path}
           onValueChange={setActivePath}
@@ -574,7 +646,7 @@ function Workspace({
               <EmptyDescription>
                 {runner.selected
                   ? "Follow the agent conversation and review its activity. Changes from this session will appear here."
-                  : "Pi or OpenCode works on a cloud clone. You provide direction and review every change."}
+                  : "Choose a session to browse files, edit code, and review changes."}
               </EmptyDescription>
             </EmptyHeader>
             {!runner.selected ? (
@@ -616,10 +688,12 @@ function Workspace({
 }
 function AgentChat({
   runner,
+  workspace,
   newSession,
   drafts,
 }: {
   runner: Runner;
+  workspace: RepositoryWorkspace;
   newSession: () => void;
   drafts: RefObject<Record<string, string>>;
 }) {
@@ -646,6 +720,12 @@ function AgentChat({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft.trim()) return;
+    if (workspace.hasDirty || workspace.hasSaving) {
+      setError(
+        "Save or discard your file changes before sending another instruction.",
+      );
+      return;
+    }
     setError("");
     try {
       await runner.send(draft.trim());
@@ -742,14 +822,16 @@ function AgentChat({
                     </span>
                   ) : null}
                 </div>
-                <p>
-                  {index === turns.length - 1 && runner.liveText !== null
-                    ? runner.liveText || "Thinking…"
-                    : turn.response ||
-                      (active
-                        ? "Reviewing your instructions and the repository…"
-                        : "No saved response.")}
-                </p>
+                <AgentResponse
+                  text={
+                    index === turns.length - 1 && runner.liveText !== null
+                      ? runner.liveText || "Thinking…"
+                      : turn.response ||
+                        (active
+                          ? "Reviewing your instructions and the repository…"
+                          : "No saved response.")
+                  }
+                />
               </article>
             </div>
           ))
@@ -762,7 +844,7 @@ function AgentChat({
               <EmptyTitle>
                 {runner.selected
                   ? "Restore your conversation"
-                  : "One conversation, all the context"}
+                  : "Start working"}
               </EmptyTitle>
               <EmptyDescription>
                 {runner.selected
@@ -901,6 +983,7 @@ function AgentChat({
 }
 export default function App() {
   const runner = useRunner();
+  const workspace = useWorkspace(runner);
   const drafts = useRef<Record<string, string>>({});
   const [exiting, setExiting] = useState(false);
   async function logout() {
@@ -953,6 +1036,7 @@ export default function App() {
   }, [runner.connected, runner.setAuthOpen]);
   const openFile = (path: string) => {
     setActivePath(path);
+    workspace.setMode("changes");
     if (mobile) setMobilePane("changes");
   };
   const sidebar = (
@@ -965,10 +1049,15 @@ export default function App() {
       settings={() =>
         runner.connected ? setSettingsOpen(true) : runner.setAuthOpen(true)
       }
+      workspace={workspace}
+      openSource={(path) => {
+        void workspace.open(path);
+        if (mobile) setMobilePane("changes");
+      }}
       close={() => setSidebarVisible(false)}
     />
   );
-  const workspace = (
+  const workspacePanel = (
     <Workspace
       runner={runner}
       files={files}
@@ -978,6 +1067,7 @@ export default function App() {
       publish={() => setPublishOpen(true)}
       logsExpanded={logsExpanded}
       setLogsExpanded={setLogsExpanded}
+      workspace={workspace}
     />
   );
   const agent = (
@@ -986,6 +1076,7 @@ export default function App() {
       runner={runner}
       newSession={newSession}
       drafts={drafts}
+      workspace={workspace}
     />
   );
   return (
@@ -1116,8 +1207,8 @@ export default function App() {
                   Sessions
                 </ToggleGroupItem>
                 <ToggleGroupItem value="changes">
-                  <FileDiff data-icon="inline-start" />
-                  Changes
+                  <Code2 data-icon="inline-start" />
+                  Editor
                 </ToggleGroupItem>
                 <ToggleGroupItem value="chat">
                   <MessageSquare data-icon="inline-start" />
@@ -1128,7 +1219,7 @@ export default function App() {
                 {mobilePane === "sessions"
                   ? sidebar
                   : mobilePane === "changes"
-                    ? workspace
+                    ? workspacePanel
                     : agent}
               </div>
             </div>
@@ -1155,7 +1246,7 @@ export default function App() {
                 defaultSize={sidebarVisible ? "47%" : "64%"}
                 minSize="320px"
               >
-                {workspace}
+                {workspacePanel}
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel

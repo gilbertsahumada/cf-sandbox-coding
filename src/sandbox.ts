@@ -1,3 +1,5 @@
+import type { RepositoryFilesResult } from './workspace-files';
+import workspaceFilesSource from '../container/workspace-files.mjs.txt';
 import { createHash } from 'node:crypto';
 import { continuationReason, activeStates, type Turn, type Checkpoint } from './conversation';
 import { validateChanges, type Proposal, type PullRequest } from './pull-request';
@@ -140,7 +142,7 @@ export class AgentSandbox extends DurableObject<Env> {
         this.changing = true;
         try {
             const status = await this.readTask();
-            const checkpoint = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+            const checkpoint = this.currentCheckpoint();
             const reason = continuationReason(this.ctx.storage.kv.get('conversationVersion'), status.state, this.container.running, this.turn, checkpoint?.turn);
             if (reason) throw Error(reason);
             if (this.turn >= 100) throw Error('This conversation reached 100 turns. Save the patch and start a new task.');
@@ -151,6 +153,49 @@ export class AgentSandbox extends DurableObject<Env> {
             await this.launchTurn(prompt, this.ctx.storage.kv.get<AgentName>(taskKey)!, id);
             return { turn: this.turn };
         } finally { this.changing = false; }
+    }
+
+    async repositoryFiles(operation: 'list' | 'read' | 'write', path: string, cursor = 0, content?: string, version?: string): Promise<RepositoryFilesResult> {
+        if (this.changing || this.publishing) throw Error('Wait for the current operation to finish.');
+        this.changing = true;
+        const input = `/workspace/.editor-request-${crypto.randomUUID()}.json`;
+        try {
+            const status = await this.readTask();
+            if (operation === 'write' && ['running', 'stopping'].includes(status.state)) throw Error('Stop the agent or wait for it to finish before saving files.');
+            if (operation === 'write' && !this.ctx.storage.kv.get('conversationVersion')) throw Error('This older session cannot save a recoverable workspace. Start a new session.');
+            if (!this.ctx.storage.kv.get('repositoryReady')) throw Error('Choose a session with a cloned repository.');
+            if (!this.container.running || this.ctx.storage.kv.get('workspaceRestorePending')) {
+                const checkpoint = this.currentCheckpoint();
+                if (!checkpoint || checkpoint.turn !== this.turn) throw Error('This session has no recoverable workspace. Its archived patch is still available.');
+                if (this.container.running) await this.container.destroy();
+                await this.restoreWorkspace(checkpoint);
+            }
+            // Install the helper for existing containers too; no agent restart is required.
+            await this.files.writeFile('/opt/workspace-files.mjs', workspaceFilesSource);
+            await this.files.writeFile(input, JSON.stringify({ operation, path, cursor, content, version }));
+            const result = await this.run(['node', '/opt/workspace-files.mjs', input], '/', {});
+            if (result.exitCode) throw Error('Could not access repository files.');
+            const value = JSON.parse(result.stdout);
+            if (value.error) return value;
+            if (operation === 'write' && value.changed) {
+                this.ctx.storage.kv.put('workspaceRevision', (this.ctx.storage.kv.get<number>('workspaceRevision') || 0) + 1);
+                const edited = this.ctx.storage.kv.get<string[]>('editorPaths') || [];
+                this.ctx.storage.kv.put('editorPaths', [...new Set([...edited, path])].slice(-50));
+                for (const key of ['diffChunks', 'proposalChunks', 'proposalError', 'pullRequest', 'checkpointError']) this.ctx.storage.kv.delete(key);
+                try { const diff = await this.readDiff(); if (!diff.exitCode) this.saveDiff(diff); } catch { /* A later diff request can retry. */ }
+                await this.archiveProposal();
+            }
+            if (operation === 'write') {
+                if (this.currentCheckpoint()?.turn !== this.turn) await this.saveWorkspaceCheckpoint();
+                value.checkpointSaved = this.currentCheckpoint()?.turn === this.turn;
+                if (!value.checkpointSaved) value.warning = 'Saved in the running workspace, but recovery could not be updated. Keep this session open and download the patch before leaving.';
+            }
+            await this.container.setInactivityTimeout(this.currentCheckpoint()?.turn === this.turn ? 60_000 : inactivityTimeout);
+            return value;
+        } finally {
+            try { if (this.container.running) await this.files.remove(input, { force: true }); } catch { /* Temporary inputs are not part of checkpoints. */ }
+            this.changing = false;
+        }
     }
 
     private async launchTurn(prompt: string, agent: AgentName, id: string) {
@@ -168,9 +213,10 @@ export class AgentSandbox extends DurableObject<Env> {
             await this.files.mkdir('/workspace/conversation', { recursive: true });
             await this.files.mkdir('/workspace/agent-config/pi', { recursive: true });
             await this.files.writeFile('/workspace/agent-config/pi/models.json', JSON.stringify(providerConfigs(this.env).pi));
-            await this.container.exec(['/bin/sh', '-c', taskScript, 'agent', this.taskDirectory, ...agentCommand(agent, prompt, this.env)], {
+            await this.container.exec(['/bin/sh', '-c', taskScript, 'agent', this.taskDirectory, ...agentCommand(agent, this.ctx.storage.kv.get<string[]>('editorPaths')?.length ? `${prompt}\n\nFiles edited through the workspace since your previous turn (paths only): ${JSON.stringify(this.ctx.storage.kv.get('editorPaths'))}. Re-read relevant files before changing them.` : prompt, this.env)], {
                 cwd: repositoryDirectory, env: { ...trustEnv, ...agentEnv(agent, this.env), PWD: repositoryDirectory }, stdout: 'ignore', stderr: 'ignore',
             });
+            this.ctx.storage.kv.delete('editorPaths');
             await this.ctx.storage.setAlarm(Date.now() + taskCheckInterval);
         } catch (error) {
             this.ctx.storage.kv.put('result', { state: 'failed', error: 'Could not start the turn. Try sending another message.' } satisfies TaskStatus);
@@ -198,7 +244,7 @@ export class AgentSandbox extends DurableObject<Env> {
 
     async conversation() {
         const status = await this.readTask();
-        const checkpoint = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+        const checkpoint = this.currentCheckpoint();
         const reason = continuationReason(this.ctx.storage.kv.get('conversationVersion'), status.state, this.container.running, this.turn, checkpoint?.turn);
         const turns: Turn[] = [];
         for (let i = 1; i <= this.turn; i++) { const turn = this.getTurn(i); if (turn) turns.push(turn); }
@@ -256,23 +302,32 @@ export class AgentSandbox extends DurableObject<Env> {
                 try { this.ctx.storage.kv.put('logs', await this.readLogs()); } catch { console.warn('Could not archive logs'); }
                 try { const diff = await this.readDiff(); if (!diff.exitCode) this.saveDiff(diff); } catch { console.warn('Could not archive diff'); }
                 await this.archiveProposal();
-                if (this.ctx.storage.kv.get('conversationVersion')) {
-                    try {
-                        const saved = await this.run(['node', '/opt/workspace-checkpoint.mjs', 'save'], '/', {});
-                        if (saved.exitCode !== 0) throw Error(saved.stderr || 'Could not save the workspace.');
-                        const old = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
-                        const generation = crypto.randomUUID(), count = Math.ceil(saved.stdout.length / 50000);
-                        for (let i = 0; i < count; i++) this.ctx.storage.kv.put(`checkpoint:${generation}:${i}`, saved.stdout.slice(i * 50000, (i + 1) * 50000));
-                        this.ctx.storage.kv.put('checkpoint', { generation, count, turn: this.turn, digest: createHash('sha256').update(saved.stdout).digest('hex') } satisfies Checkpoint);
-                        if (old) for (let i = 0; i < old.count; i++) this.ctx.storage.kv.delete(`checkpoint:${old.generation}:${i}`);
-                    } catch (error) { this.ctx.storage.kv.put('checkpointError', error instanceof Error ? error.message : 'Could not save the workspace.'); }
-                }
-                const safe = !this.ctx.storage.kv.get('conversationVersion') || this.ctx.storage.kv.get<Checkpoint>('checkpoint')?.turn === this.turn;
+                await this.saveWorkspaceCheckpoint();
+                const safe = !this.ctx.storage.kv.get('conversationVersion') || this.currentCheckpoint()?.turn === this.turn;
                 await this.container.setInactivityTimeout(safe ? 60_000 : inactivityTimeout);
             }
             this.ctx.storage.kv.put('finishedTurn', this.turn);
         })();
         try { await this.finalizing; } finally { this.finalizing = undefined; }
+    }
+
+    private async saveWorkspaceCheckpoint() {
+        if (!this.ctx.storage.kv.get('conversationVersion')) return;
+        try {
+            const saved = await this.run(['node', '/opt/workspace-checkpoint.mjs', 'save'], '/', {});
+            if (saved.exitCode !== 0) throw Error(saved.stderr || 'Could not save the workspace.');
+            const old = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+            const generation = crypto.randomUUID(), count = Math.ceil(saved.stdout.length / 50000);
+            for (let i = 0; i < count; i++) this.ctx.storage.kv.put(`checkpoint:${generation}:${i}`, saved.stdout.slice(i * 50000, (i + 1) * 50000));
+            this.ctx.storage.kv.put('checkpoint', { generation, count, turn: this.turn, workspaceRevision: this.ctx.storage.kv.get<number>('workspaceRevision') || 0, digest: createHash('sha256').update(saved.stdout).digest('hex') } satisfies Checkpoint);
+            this.ctx.storage.kv.delete('checkpointError');
+            if (old) for (let i = 0; i < old.count; i++) this.ctx.storage.kv.delete(`checkpoint:${old.generation}:${i}`);
+        } catch (error) { this.ctx.storage.kv.put('checkpointError', error instanceof Error ? error.message : 'Could not save the workspace.'); }
+    }
+
+    private currentCheckpoint(): Checkpoint | undefined {
+        const saved = this.ctx.storage.kv.get<Checkpoint>('checkpoint');
+        return saved && (saved.workspaceRevision || 0) === (this.ctx.storage.kv.get<number>('workspaceRevision') || 0) ? saved : undefined;
     }
 
     private async restoreWorkspace(checkpoint: Checkpoint) {
@@ -338,7 +393,9 @@ export class AgentSandbox extends DurableObject<Env> {
                 baseCommit: this.ctx.storage.kv.get<string>('baseCommit')!, baseBranch: this.ctx.storage.kv.get<string>('baseBranch')! };
             const grant = this.ctx.storage.kv.get<RepositoryGrant>('githubGrant')!;
             const body = `${description}\n\n---\nCreated from sandbox task \`${taskId}\` (${this.ctx.storage.kv.get<string>(taskKey)}).\nStatus: ${ (await this.readTask()).state }.\nTests: review the task activity; checks have not been independently verified.\nBase commit: \`${proposal.baseCommit}\`.\n\nThis draft requires review before merging.`;
-            const pr = await this.env.GITHUB.getByName('owner').createPullRequest(grant, this.turn > 1 ? `${taskId}-turn-${this.turn}` : taskId, proposal, title, body);
+            const revision = this.ctx.storage.kv.get<number>('workspaceRevision') || 0;
+            const publicationId = (this.turn > 1 ? `${taskId}-turn-${this.turn}` : taskId) + (revision ? `-edit-${revision}` : '');
+            const pr = await this.env.GITHUB.getByName('owner').createPullRequest(grant, publicationId, proposal, title, body);
             this.ctx.storage.kv.put('pullRequest', pr);
             return pr;
         })();

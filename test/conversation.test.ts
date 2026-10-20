@@ -10,6 +10,7 @@ import { saveCheckpoint, restoreCheckpoint } from '../container/workspace-checkp
 
 // Exercise the real Durable Object logic with in-memory Cloudflare/container transports.
 let source = ts.transpileModule(readFileSync(new URL('../src/sandbox.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+source = source.replace(/import workspaceFilesSource from [^;]+;/, `const workspaceFilesSource = ${JSON.stringify(readFileSync(new URL('../container/workspace-files.mjs.txt', import.meta.url), 'utf8'))};`);
 source = source.replace(/import .* from ["']cloudflare:workers["'];/, 'class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }');
 source = source.replace(/import .* from ["']@cloudflare\/sandbox["'];/, 'class Files { constructor(container) { return container.files; } } const SandboxFileError = { is: error => error.code === "ENOENT" };');
 source = source.replace(/from ["']\.\/([^"']+)["']/g, (_, path) => `from ${JSON.stringify(new URL(`../src/${path}.ts`, import.meta.url).href)}`);
@@ -17,6 +18,7 @@ const { AgentSandbox } = await import('data:text/javascript;base64,' + Buffer.fr
 const config = { MODEL_BASE_URL: 'https://provider.test/v1', MODEL_ID: 'test', MODEL_API: 'chat-completions', MODEL_CONTEXT_WINDOW: '32768', MODEL_MAX_TOKENS: '4096' };
 function fixture() {
   const stored = new Map<string, any>([['repositoryReady', true], ['baseCommit', 'a'.repeat(40)]]), files = new Map<string, string>();
+  const fileRequests: any[] = []; let fileContent = 'before', lastLaunch = '';
   let lastDirectory = '', spawns = 0, restores = 0, checkpointFail = false, restoreFail = false;
   const container: any = {
     running: true, images: { agent: 'test' },
@@ -27,8 +29,9 @@ function fixture() {
     exec: async (args: string[]) => {
       let stdout = '', stderr = '', exitCode = 0;
       if (args[0] === '/bin/sh' && args[3] === 'agent') {
-        spawns++; lastDirectory = args[4]; files.set(lastDirectory + '/stdout.log', ''); files.set(lastDirectory + '/stderr.log', '');
+        spawns++; lastLaunch = args.at(-1)!; lastDirectory = args[4]; files.set(lastDirectory + '/stdout.log', ''); files.set(lastDirectory + '/stderr.log', '');
       } else if (args[0] === 'tail') stdout = files.get(args.at(-1)!) || '';
+      else if (args[1] === '/opt/workspace-files.mjs') { const body = JSON.parse(files.get(args[2])!); fileRequests.push(body); const changed = body.operation === 'write' && body.content !== fileContent; if (body.operation === 'write') fileContent = body.content; stdout = JSON.stringify({ path: body.path, content: fileContent, version: 'b'.repeat(64), changed }); }
       else if (args[1] === '/opt/workspace-checkpoint.mjs') {
         if (args[2] === 'save') { if (checkpointFail) { exitCode = 1; stderr = 'Checkpoint limit'; } else stdout = Buffer.from('test archive').toString('base64'); }
         else restores++;
@@ -40,7 +43,7 @@ function fixture() {
   const ctx = { container, exports: { Outbound: () => ({}) }, blockConcurrencyWhile: (fn: any) => fn(),
     storage: { kv: { get: (key: string) => structuredClone(stored.get(key)), put: (key: string, value: unknown) => { assert.ok(Buffer.byteLength(JSON.stringify(value)) <= 128 * 1024, 'KV value is bounded'); stored.set(key, structuredClone(value)); }, delete: (key: string) => stored.delete(key) }, setAlarm: async () => {}, deleteAlarm: async () => {} } };
   const sandbox = new AgentSandbox(ctx, config);
-  return { sandbox, stored, container, get spawns() { return spawns; }, get restores() { return restores; }, restart: () => new AgentSandbox(ctx, config), failCheckpoint: () => { checkpointFail = true; }, failRestore: () => { restoreFail = true; },
+  return { sandbox, stored, container, fileRequests, get lastLaunch() { return lastLaunch; }, get spawns() { return spawns; }, get restores() { return restores; }, restart: () => new AgentSandbox(ctx, config), failCheckpoint: () => { checkpointFail = true; }, failRestore: () => { restoreFail = true; },
     complete: (text: string) => { files.set(lastDirectory + '/exit-code', '0'); files.set(lastDirectory + '/stdout.log', JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop' } }) + '\n' + JSON.stringify({ type: 'agent_settled' }) + '\n'); } };
 }
 test('chat validates idempotency identifiers and refuses empty or oversized input', () => {
@@ -159,4 +162,40 @@ test('compiled UI and self-hosted fonts remain public while task data stays prot
   }
   for (const path of ['/sandboxes/pi-private/diff', '/sandboxes/pi-private/messages', '/.dev.vars', '/assets/../.dev.vars']) assert.equal((await handler.fetch(new Request(`https://runner.test${path}`), env)).status, 401);
   assert.equal(fetched.length, 4);
+});
+
+test('manual edits refresh durable checkpoints, invalidate publication caches and reach the next native turn', async () => {
+  const f = fixture(); await f.sandbox.startTask('First', 'pi'); f.complete('Done'); await f.sandbox.conversation();
+  f.stored.set('pullRequest', { url: 'previous' }); f.stored.set('proposalChunks', 1);
+  const saved = await f.sandbox.repositoryFiles('write', 'file.ts', 0, 'manual change', 'a'.repeat(64));
+  assert.equal(saved.checkpointSaved, true); assert.equal(f.stored.get('workspaceRevision'), 1); assert.equal(f.stored.has('pullRequest'), false);
+  assert.equal(f.stored.get('checkpoint').workspaceRevision, 1); assert.equal(f.stored.get('proposalChunks'), undefined);
+  await f.container.destroy(); await f.restart().repositoryFiles('read', 'file.ts'); assert.equal(f.restores, 1);
+  await f.sandbox.sendMessage(crypto.randomUUID(), 'Continue'); assert.ok(f.lastLaunch.includes('file.ts')); assert.ok(f.lastLaunch.includes('Re-read relevant files'));
+  assert.equal(f.stored.has('editorPaths'), false); assert.equal(f.spawns, 2);
+});
+test('file writes cannot race an active agent and a failed manual checkpoint never restores stale files', async () => {
+  const f = fixture(); await f.sandbox.startTask('First', 'pi');
+  await assert.rejects(f.sandbox.repositoryFiles('write','file.ts',0,'changed','a'.repeat(64)), /Stop the agent/); assert.equal(f.fileRequests.length, 0);
+  f.complete('Done'); await f.sandbox.conversation(); f.failCheckpoint();
+  const saved = await f.sandbox.repositoryFiles('write','file.ts',0,'changed','a'.repeat(64)); assert.equal(saved.checkpointSaved, false); assert.match(saved.warning, /recovery could not be updated/);
+  const info = await f.sandbox.conversation(); assert.equal(info.checkpointSaved,false);
+  await f.container.destroy(); await assert.rejects(f.restart().repositoryFiles('read','file.ts'), /no recoverable workspace/); assert.equal(f.restores,0);
+});
+test('file routes preserve authentication, CSRF checks, version validation and private cache headers', async () => {
+  const received: unknown[][] = [];
+  const env = { ...config, MODEL_API_KEY:'test-key', RUNNER_API_TOKEN:'test-runner', SANDBOX:{getByName:()=>({repositoryFiles:async(...args:unknown[])=>{received.push(args);return {path:'file.ts',content:'text',version:'a'.repeat(64)};}})}};
+  const root = 'https://runner.test/sandboxes/pi-editor';
+  assert.equal((await handler.fetch(new Request(root+'/files'),env)).status,401);
+  assert.equal((await handler.fetch(new Request(root+'/file',{method:'PUT',headers:{origin:'https://evil.test'},body:'{}'}),env)).status,403);
+  const headers={authorization:'Bearer test-runner','content-type':'application/json'};
+  const response=await handler.fetch(new Request(root+'/files?path=src',{headers}),env);assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
+  assert.equal((await handler.fetch(new Request(root+'/file',{method:'PUT',headers,body:JSON.stringify({path:'src/file.ts',content:'hello',version:'a'.repeat(64)})}),env)).status,200);
+  assert.equal((await handler.fetch(new Request(root+'/file',{method:'PUT',headers,body:JSON.stringify({path:'src/file.ts',content:'hello',version:'old'})}),env)).status,400);
+  assert.deepEqual(received,[['list','src',0],['write','src/file.ts',0,'hello','a'.repeat(64)]]);
+});
+test('the editor nonce matches its CSP and never enables arbitrary inline styles or scripts',async()=>{
+ const env={ASSETS:{fetch:async()=>new Response('<html><head></head><body></body></html>',{headers:{etag:'old','content-type':'text/html'}})}};
+ const response=await handler.fetch(new Request('https://runner.test/'),env);const html=await response.text();const nonce=/name="csp-nonce" content="([^"]+)"/.exec(html)?.[1];
+ assert.ok(nonce);assert.ok(response.headers.get('content-security-policy').includes(`'nonce-${nonce}'`));assert.equal(response.headers.get('etag'),null);assert.equal(response.headers.get('cache-control'),'no-store');assert.ok(!response.headers.get('content-security-policy').includes('unsafe-inline'));
 });

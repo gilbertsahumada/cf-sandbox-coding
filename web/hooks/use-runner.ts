@@ -676,6 +676,8 @@ export function useRunner() {
     if (selectedRef.current === id) setProposal(info);
   };
   return {
+    request,
+    refresh: () => setRevision(value => value + 1),
     runs,
     selected,
     connected,
