@@ -48,21 +48,21 @@ test('chat validates idempotency identifiers and refuses empty or oversized inpu
   for (const value of [{ id: 'invalid', prompt: 'yes' }, { id: crypto.randomUUID(), prompt: ' ' }, { id: crypto.randomUUID(), prompt: 'x'.repeat(32001) }]) assert.equal(ChatMessage.safeParse(value).success, false);
 });
 test('continuation requires a native session and a current durable checkpoint when the container is gone', () => {
-  assert.match(continuationReason(undefined, 'succeeded', false, 0)!, /antigua/);
-  assert.match(continuationReason(1, 'running', true, 1)!, /trabajando/);
-  assert.match(continuationReason(1, 'lost', false, 2, 1)!, /recuperación/);
+  assert.match(continuationReason(undefined, 'succeeded', false, 0)!, /older task/);
+  assert.match(continuationReason(1, 'running', true, 1)!, /working/);
+  assert.match(continuationReason(1, 'lost', false, 2, 1)!, /checkpoint/);
   assert.equal(continuationReason(1, 'succeeded', false, 2, 2), undefined);
 });
 test('two turns retain conversation, invalidate stale diff/PR caches and reject duplicate or concurrent generation', async () => {
   const f = fixture(); await f.sandbox.startTask('First instruction', 'pi');
-  await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'too early'), /trabajando/);
+  await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'too early'), /working/);
   f.complete('Should I continue?'); const first = await f.sandbox.conversation();
   assert.equal(first.turns[0].response, 'Should I continue?'); assert.equal(first.checkpointSaved, true);
   f.stored.set('pullRequest', { url: 'old' }); f.stored.set('proposalChunks', 1);
   const id = crypto.randomUUID();
   assert.deepEqual(await f.sandbox.sendMessage(id, 'Yes, implement it'), { turn: 2 });
   assert.deepEqual(await f.sandbox.sendMessage(id, 'Yes, implement it'), { turn: 2 });
-  await assert.rejects(f.sandbox.sendMessage(id, 'Different instruction'), /otro mensaje/);
+  await assert.rejects(f.sandbox.sendMessage(id, 'Different instruction'), /another message/);
   assert.equal(f.spawns, 2); assert.equal(f.stored.has('diffChunks'), false); assert.equal(f.stored.has('pullRequest'), false); assert.equal(f.stored.has('proposalChunks'), false);
   f.complete('Implemented'); const final = await f.sandbox.conversation();
   assert.deepEqual(final.turns.map((turn: any) => [turn.prompt, turn.response]), [['First instruction', 'Should I continue?'], ['Yes, implement it', 'Implemented']]);
@@ -78,10 +78,10 @@ test('failed or corrupt checkpoints never start a fresh empty conversation after
   const f = fixture(); await f.sandbox.startTask('First', 'pi'); f.failCheckpoint(); f.complete('Ready');
   const live = await f.sandbox.conversation(); assert.equal(live.canContinue, true); assert.equal(live.checkpointSaved, false); assert.equal(live.warning, 'Checkpoint limit');
   await f.sandbox.stopTask(); assert.equal((await f.sandbox.conversation()).canContinue, false);
-  await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /recuperación/); assert.equal(f.spawns, 1);
+  await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /checkpoint/); assert.equal(f.spawns, 1);
   const g = fixture(); await g.sandbox.startTask('First', 'pi'); g.complete('Ready'); await g.sandbox.conversation(); await g.sandbox.stopTask();
   const checkpoint = g.stored.get('checkpoint'); g.stored.delete(`checkpoint:${checkpoint.generation}:0`);
-  await assert.rejects(g.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /incompleto/); assert.equal(g.spawns, 1);
+  await assert.rejects(g.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /incomplete/); assert.equal(g.spawns, 1);
 });
 test('cancelling an active turn preserves a recoverable conversation and its cancelled status', async () => {
   const f = fixture(); await f.sandbox.startTask('First', 'pi');
@@ -136,7 +136,7 @@ test('chat routes enforce authentication, same-origin mutations and validated me
 
 test('an interrupted restoration cannot leave an empty live container that silently loses context on retry', async () => {
   const f = fixture(); await f.sandbox.startTask('First', 'pi'); f.complete('Ready'); await f.sandbox.conversation(); await f.sandbox.stopTask();
-  f.failRestore(); await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /punto guardado se conserva/);
+  f.failRestore(); await assert.rejects(f.sandbox.sendMessage(crypto.randomUUID(), 'Continue'), /saved checkpoint is preserved/);
   assert.equal(f.container.running, false); assert.equal(f.spawns, 1);
   await f.restart().sendMessage(crypto.randomUUID(), 'Continue'); assert.equal(f.restores, 1); assert.equal(f.spawns, 2);
 });
@@ -144,4 +144,19 @@ test('large Unicode prompts and responses round-trip without exceeding individua
   const f = fixture(), prompt = '界'.repeat(32000), response = '答'.repeat(16000);
   await f.sandbox.startTask(prompt, 'pi'); f.complete(response);
   const chat = await f.sandbox.conversation(); assert.equal(chat.turns[0].prompt, prompt); assert.equal(chat.turns[0].response, response);
+});
+
+
+test('compiled UI and self-hosted fonts remain public while task data stays protected', async () => {
+  const fetched: string[] = [];
+  const env = { RUNNER_API_TOKEN: 'test-runner', ASSETS: { fetch: async (request: Request) => { fetched.push(new URL(request.url).pathname); return new Response('static'); } } };
+  for (const path of ['/', '/favicon.svg', '/assets/index-hash.js', '/assets/font-hash.woff2']) {
+    const response = await handler.fetch(new Request(`https://runner.test${path}`), env);
+    assert.equal(response.status, 200);
+    const csp = response.headers.get('content-security-policy')!;
+    assert.ok(csp.includes("font-src 'self'")); assert.ok(!csp.includes('unsafe-inline'));
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  }
+  for (const path of ['/sandboxes/pi-private/diff', '/sandboxes/pi-private/messages', '/.dev.vars', '/assets/../.dev.vars']) assert.equal((await handler.fetch(new Request(`https://runner.test${path}`), env)).status, 401);
+  assert.equal(fetched.length, 4);
 });

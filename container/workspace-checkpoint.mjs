@@ -11,7 +11,7 @@ export function saveCheckpoint(root = '/workspace') {
   try {
     const archive = join(temp, 'workspace.tgz');
     execFileSync('tar', ['-czf', archive, '-C', root, '--', ...roots.filter(path => existsSync(join(root, path)))], { timeout: 25000 });
-    if (statSync(archive).size > checkpointLimit) throw Error('El punto de recuperación supera 20 MB. El entorno seguirá abierto temporalmente; descarga el patch antes de salir.');
+    if (statSync(archive).size > checkpointLimit) throw Error('The recovery checkpoint exceeds 20 MB. The workspace will remain open temporarily; download the patch before leaving.');
     return readFileSync(archive).toString('base64');
   } finally { rmSync(temp, { recursive: true, force: true }); }
 }

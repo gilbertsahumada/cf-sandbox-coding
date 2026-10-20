@@ -5,7 +5,7 @@ Este proyecto ejecuta Pi y OpenCode en Cloudflare Sandbox con un proveedor compa
 ## Repository language
 
 - Write code comments, commit messages, pull request titles and descriptions, and review comments in English.
-- Keep user-facing interface text in Spanish unless the task requests another language.
+- Keep all user-facing interface text, accessibility labels, loading states, and application-generated messages in English.
 
 ## Mejoras del propio proyecto
 

@@ -12,7 +12,12 @@
     ],
     "strict": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@/*": [
+        "./web/*"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts"

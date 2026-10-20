@@ -20,7 +20,7 @@ export function validState(actual: string, expected: string): boolean {
 export function appManifest(origin: string, suffix: string) {
   return {
     name: `Sandbox Coding ${suffix}`, url: origin,
-    description: 'Seleccionar repositorios y clonarlos en sandboxes de programación y proponer cambios mediante pull requests.',
+    description: 'Select repositories, clone them into coding sandboxes, and propose changes through pull requests.',
     public: false, hook_attributes: { url: `${origin}/github/events`, active: false },
     redirect_url: `${origin}/github/manifest/callback`, setup_url: `${origin}/github/install/callback`,
     setup_on_update: true, request_oauth_on_install: false,
@@ -40,7 +40,7 @@ export async function githubRequest(path: string, token?: string, body?: unknown
     try { const data = await response.json() as { message?: string }; reason = typeof data.message === 'string' ? data.message.slice(0, 180) : ''; } catch {}
     const operation = path.startsWith('/app-manifests/') ? 'manifest' : path.includes('/access_tokens') ? 'token' : 'api';
     // Only GitHub's error message is retained; never store response credentials or request headers.
-    throw new GitHubApiError(response.status, operation, `GitHub (${response.status}): ${reason || 'No se pudo completar la operación.'}`);
+    throw new GitHubApiError(response.status, operation, `GitHub (${response.status}): ${reason || 'The operation could not be completed.'}`);
   }
   return response.status === 204 ? null : response.json();
 }

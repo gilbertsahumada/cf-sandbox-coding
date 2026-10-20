@@ -44,7 +44,7 @@ test('proposal validation refuses unsafe paths, secrets, workflows, corrupt byte
   assert.throws(() => validateChanges({ files: [] }));
   assert.throws(() => validateChanges({ files: [{ ...blob(), mode: '160000' }] }));
   assert.doesNotThrow(() => validateChanges({ files: [blob('docs/normal.md'), blob('.env.example'), blob('.dev.vars.example')] }));
-  assert.throws(() => validateChanges({ files: [{ ...blob('dir'), sha: null, content: undefined }, blob('dir/file')] }), /directorio/);
+  assert.throws(() => validateChanges({ files: [{ ...blob('dir'), sha: null, content: undefined }, blob('dir/file')] }), /directory/);
 });
 function apiFixture() {
   const writes: { path: string; body: any }[] = [];
@@ -88,6 +88,6 @@ test('retry after PR failure reuses the checkpoint and branch; repeat publicatio
 });
 test('publication never overwrites a conflicting branch', async () => {
   const fixture = apiFixture(); fixture.setRef('someone-elses-commit');
-  await assert.rejects(publishProposal(fixture.api, 'owner/repo', 'pi-test', proposal, 'Fix', '', { commit: 'new-commit' }, () => {}), /No se sobrescribió/);
+  await assert.rejects(publishProposal(fixture.api, 'owner/repo', 'pi-test', proposal, 'Fix', '', { commit: 'new-commit' }, () => {}), /not overwritten/);
   assert.equal(fixture.writes.length, 0);
 });

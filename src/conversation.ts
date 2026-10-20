@@ -4,7 +4,7 @@ export type Turn = { number: number; id: string; prompt: string; startedAt: numb
 export type Checkpoint = { generation: string; count: number; turn: number; digest: string };
 export const activeStates = ['running', 'stopping'];
 export function continuationReason(version: unknown, state: string, live: boolean, turn: number, checkpointTurn?: number): string | undefined {
-  if (!version) return 'Esta tarea antigua no guardó una sesión de conversación. Crea una tarea nueva; su patch sigue disponible.';
-  if (activeStates.includes(state)) return 'El agente está trabajando. Puedes detenerlo antes de enviar otra instrucción.';
-  if (!live && checkpointTurn !== turn) return 'No hay un punto de recuperación completo para este turno. Conservamos la conversación y los cambios archivados disponibles.';
+  if (!version) return 'This older task has no saved conversation session. Start a new task; its patch is still available.';
+  if (activeStates.includes(state)) return 'The agent is working. Stop it before sending another instruction.';
+  if (!live && checkpointTurn !== turn) return 'This turn has no complete recovery checkpoint. Available conversation history and archived changes are preserved.';
 }
