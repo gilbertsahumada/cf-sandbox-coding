@@ -1,3 +1,4 @@
+import { repositorySelection, type RepositorySelection } from './repository-selection';
 import { DurableObject } from 'cloudflare:workers';
 import { appJwt, appManifest, githubRequest, validState, type GitHubApp, type GitHubRepository, type RepositoryGrant } from './github-api';
 type Flow = { state: string; expires: number; phase: 'manifest' | 'exchange' | 'install'; codeHash?: string };
@@ -84,12 +85,26 @@ export class GitHubConnection extends DurableObject<Env> {
     if (repo.id !== repositoryId || !/^[\w.-]+\/[\w.-]+$/.test(repo.full_name)) throw new Error('Repositorio inválido.');
     return { installationId, repositoryId, fullName: repo.full_name, url: `https://github.com/${repo.full_name}.git`, private: repo.private, defaultBranch: repo.default_branch };
   }
+  async selectedRepository(): Promise<{ repository: GitHubRepository | null; warning?: string }> {
+    const selection = this.ctx.storage.kv.get<RepositorySelection>('selectedRepository');
+    if (!selection) return { repository: null };
+    try { return { repository: await this.repository(selection.installationId, selection.repositoryId) }; }
+    catch { return { repository: null, warning: 'No pudimos recuperar el repositorio anterior. Comprueba que siga autorizado en GitHub.' }; }
+  }
+  async rememberRepository(value: unknown): Promise<{ repository: GitHubRepository }> {
+    const selection = repositorySelection(value);
+    if (!selection) throw new Error('Repositorio inválido.');
+    const repository = await this.repository(selection.installationId, selection.repositoryId);
+    this.ctx.storage.kv.put('selectedRepository', selection);
+    return { repository };
+  }
   async tokenForRepository(grant: RepositoryGrant): Promise<string> {
     return this.installationToken(grant.installationId, grant.repositoryId);
   }
   async disconnect() {
     const installations = this.ctx.storage.kv.get<Installation[]>('installations') || [];
     this.ctx.storage.kv.delete('installations');
+    this.ctx.storage.kv.delete('selectedRepository');
     this.ctx.storage.kv.delete('flow');
     this.tokens.clear();
     // Removing the installations revokes even the short-lived tokens minted earlier.

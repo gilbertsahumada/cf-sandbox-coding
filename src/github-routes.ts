@@ -1,3 +1,4 @@
+import { repositorySelection } from './repository-selection';
 import { validState } from './github-api';
 const flowCookie = '__Host-github-flow';
 const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
@@ -42,6 +43,12 @@ export async function githubRoute(request: Request, env: Env): Promise<Response>
       const flow = await connection.begin(url.origin);
       const { state, ...publicFlow } = flow;
       return Response.json(publicFlow, { headers: { ...headers, 'set-cookie': cookie(state) } });
+    }
+    if (url.pathname === '/github/selected-repository' && request.method === 'GET') return Response.json(await connection.selectedRepository(), { headers });
+    if (url.pathname === '/github/selected-repository' && request.method === 'PUT') {
+      const selection = repositorySelection(await request.json().catch(() => null));
+      if (!selection) return Response.json({ message: 'Elige un repositorio válido.' }, { status: 400, headers });
+      return Response.json(await connection.rememberRepository(selection), { headers });
     }
     if (url.pathname === '/github/repositories' && request.method === 'GET') {
       const page = Number(url.searchParams.get('page') || '1');
