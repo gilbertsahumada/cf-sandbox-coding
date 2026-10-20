@@ -17,7 +17,7 @@ Abre [Sandbox](https://cf-sandbox-coding.gilbertsahumada.workers.dev) y pulsa **
 1. Elige Pi u OpenCode.
 2. Conecta GitHub, autoriza los repositorios y elige uno en el selector. Puedes buscar entre públicos y privados y especificar una rama o etiqueta.
 3. Describe la tarea y pulsa **Ejecutar tarea**.
-4. Sigue la actividad, revisa **Cambios** y descarga el patch si quieres aplicarlo localmente.
+4. Sigue la actividad y revisa **Cambios**. Al terminar, pulsa **Crear PR**, completa el título y la descripción y publica un borrador. También puedes descargar el patch.
 
 La sesión usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict` de ocho horas. La API continúa aceptando Bearer para el cliente de terminal. El token no se guarda en localStorage; el historial conserva las últimas 12 tareas en este navegador. Para tareas privadas solo conserva el identificador, agente, tiempos y estado; no guarda nombres de repositorios, ramas, instrucciones, logs ni cambios. Los nombres privados se sustituyen por una etiqueta genérica y esas entradas se eliminan al cerrar sesión. Un enlace `/?task=ID` permite recuperar una tarea existente después de autenticarte. Los resultados se consultan al servidor al seleccionarlas. El botón de cierre de sesión limpia los resultados visibles; una tarea en curso sigue ejecutándose en su sandbox.
 
@@ -27,7 +27,7 @@ La página y sus archivos estáticos son públicos; todas las operaciones y resu
 
 ## Conectar GitHub
 
-La conexión usa una **GitHub App propia**, creada desde un manifiesto, con `Contents: read` y `Metadata: read`. No usa ni copia la sesión de `gh` del equipo ni solicita el scope OAuth `repo`.
+La conexión usa una **GitHub App propia**, creada desde un manifiesto, con `Contents: write`, `Pull requests: write` y `Metadata: read` para publicar propuestas desde el Worker. La clonación continúa usando tokens de solo lectura. No usa ni copia la sesión de `gh` del equipo ni solicita el scope OAuth `repo`.
 
 1. Inicia sesión en el runner y pulsa **Conectar GitHub**.
 2. GitHub te pedirá crear la app propuesta, con un nombre único. Esta configuración se hace una sola vez; no tienes que copiar claves.
@@ -45,6 +45,16 @@ El callback exige un estado aleatorio, temporal y vinculado a una cookie protegi
 **Desconectar** elimina las instalaciones conectadas y solicita a GitHub revocarlas. La identidad de la app se conserva para volver a instalarla sin crear otra. Si GitHub no permite revocar alguna instalación, la interfaz lo indica y el runner bloquea de todos modos la emisión de nuevos tokens. Puedes revisar o desinstalar la app en [las instalaciones de GitHub](https://github.com/settings/installations).
 
 El runner sigue siendo para un único operador: cualquier persona con `RUNNER_API_TOKEN` tiene el mismo acceso al catálogo y a las tareas. Autoriza solo los repositorios con los que quieras trabajar; el agente enviará al proveedor Qwen el contexto que necesite cuando lances una tarea.
+
+## Crear pull requests
+
+El botón **Crear PR** aparece al terminar una tarea de un repositorio elegido mediante GitHub. Revisa el diff, escribe un título y describe los cambios y las pruebas. El Worker crea un commit sobre el commit inicial, una rama `sandbox/ID-DE-TAREA` y un PR **en borrador** hacia la rama de origen. El enlace se recupera al recargar. Los reintentos reutilizan la rama y el PR; una rama con contenido distinto nunca se sobrescribe. No hay merges ni despliegues automáticos.
+
+Para una GitHub App ya instalada, abre **Configurar permisos de la app** en el diálogo y cambia **Contents** y **Pull requests** a **Read and write**. Guarda y aprueba los permisos nuevos en **Revisar instalación**. Cambiar el manifiesto del código no actualiza una instalación existente. [GitHub requiere aprobar los nuevos permisos](https://docs.github.com/en/apps/maintaining-github-apps/modifying-a-github-app-registration#changing-the-permissions-of-a-github-app).
+
+El token de escritura se emite solo en el Worker al pulsar el botón, restringido al ID del repositorio elegido. El agente conserva acceso de lectura y nunca recibe ese token. Se conservan los archivos modificados en el Durable Object antes de apagar el contenedor, incluidos binarios, enlaces simbólicos, permisos ejecutables y eliminaciones. El límite es 200 archivos y 5 MB de contenido. Los cambios en workflows, archivos con nombres de credenciales y conversiones entre archivo y directorio requieren revisión/publicación local con el patch. Las plantillas `.env.example` y `.dev.vars.example` están permitidas; la detección por nombre no sustituye revisar el diff.
+
+Las tareas antiguas sin archivos exportados o sin rama de origen no pueden convertirse automáticamente: descarga su patch o ejecuta una tarea nueva. Las tareas detenidas o fallidas pueden publicarse como borrador si conservaron archivos, con su estado indicado en la descripción. El resultado del agente no se presenta como prueba independiente de que los checks pasaron.
 
 ## Configurar el proveedor
 
@@ -118,6 +128,8 @@ Las rutas de operaciones exigen `Authorization: Bearer <RUNNER_API_TOKEN>` o una
 | DELETE | `/sandboxes/:id/task` | Cancelar el grupo de procesos, archivar logs y diff cuando sea posible y detener el contenedor; conserva resultados ya archivados |
 | GET | `/sandboxes/:id/logs` | Últimos 32 KB de stdout y stderr |
 | GET | `/sandboxes/:id/events` | SSE de stdout, stderr y estado; reconexión con `Last-Event-ID` o `?cursor=stdoutBytes:stderrBytes` |
+| GET | `/sandboxes/:id/pull-request` | Disponibilidad, motivo de bloqueo o enlace al PR existente |
+| POST | `/sandboxes/:id/pull-request` | `{ "title": "...", "description": "..." }`; crea una propuesta en borrador |
 | GET | `/sandboxes/:id/diff` | Patch Git, incluidos archivos nuevos y binarios |
 
 Cada sandbox acepta una sola tarea. Usa otro nombre para una tarea nueva. El diff se calcula contra el commit inicial, aunque el agente cree commits durante su ejecución.
@@ -141,7 +153,7 @@ El agente y el código del repositorio comparten el sandbox: los archivos, logs 
 
 ## Verificación
 
-Verificado en esta sesión: compilación TypeScript, 32 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
+Verificado en esta sesión: compilación TypeScript, 37 pruebas automáticas, autenticación HTTP local, construcción de la imagen, ejecución de herramientas con Pi y OpenCode contra un servidor de prueba y empaquetado de Wrangler sin despliegue. También verificadas dos tareas reales en Cloudflare con Qwen: Pi y OpenCode crearon el archivo solicitado y su diff incluyó el contenido esperado. Evidencia en `verification/pi.json`, `verification/pi.diff`, `verification/opencode.json` y `verification/opencode.diff`.
 
 ```sh
 npm run check
@@ -184,3 +196,5 @@ Ejecuta dos tareas controladas con Qwen sobre el repositorio público `octocat/H
 Durante la ejecución se leen los archivos de salida completos con offsets de bytes. Una vez apagado el contenedor, la recuperación muestra la cola archivada de hasta 32 KB por canal y lo indica en la interfaz. El navegador no guarda logs, diffs ni cursores de contenido en localStorage. La vista limita el volumen de texto visible para evitar crecimiento indefinido de memoria.
 
 Verificación SSE en Cloudflare: Pi recibió eventos antes de completar y continuó tras desconectar el observador; la reconexión completó la tarea. OpenCode se canceló mientras ejecutaba una herramienta y conservó `sse-check.txt` en el diff archivado. Ambas instancias se apagaron al finalizar. Métricas en `verification/sse-live.json`; prueba de interfaz con datos simulados en `verification/sse-browser.json`.
+
+La creación de propuestas se verificó con repositorios Git locales y respuestas de GitHub simuladas: binarios, eliminación, renombre, modos, enlaces simbólicos, commit del agente, reintentos y conflicto de rama. La interfaz se probó con datos simulados, incluyendo error de permisos, reintento y recuperación del enlace al recargar (`verification/pr-ui.png`). La publicación real desde la GitHub App queda pendiente de aprobar sus permisos de escritura.

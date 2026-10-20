@@ -63,12 +63,22 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
     if (new URL(request.url).pathname === "/health" && request.method === "GET") return Response.json({ ok: true, agents: ["pi", "opencode"] });
-    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events)$/.exec(new URL(request.url).pathname);
+    const match = /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request)$/.exec(new URL(request.url).pathname);
     if (!match) return new Response("Not found", { status: 404 });
     if (!env.MODEL_BASE_URL || !env.MODEL_ID || !env.MODEL_API_KEY) return new Response("Configure model endpoint, model ID and API key first", { status: 503 });
     const [, name, resource] = match;
     const sandbox = env.SANDBOX.getByName(name);
     try {
+      if (resource === 'pull-request') {
+        const headers = { 'cache-control': 'no-store' };
+        if (request.method === 'GET') return Response.json(await sandbox.pullRequestStatus(), { headers });
+        if (request.method === 'POST') {
+          const parsed = z.object({ title: z.string().trim().min(1).max(200).refine(value => !/[\r\n]/.test(value)), description: z.string().trim().max(20000).default('') }).safeParse(await readJson(request));
+          if (!parsed.success) return Response.json({ message: 'Revisa el título y la descripción.' }, { status: 400, headers });
+          try { return Response.json(await sandbox.createPullRequest(name, parsed.data.title, parsed.data.description), { status: 201, headers }); }
+          catch (error) { return Response.json({ message: error instanceof Error ? error.message : 'No se pudo crear el PR.' }, { status: 409, headers }); }
+        }
+      }
       if (resource === 'events' && request.method === 'GET') {
         const cursor = logCursor(request.headers.get('last-event-id') || new URL(request.url).searchParams.get('cursor') || '0:0');
         if (!cursor) return new Response('Invalid log cursor', { status: 400 });

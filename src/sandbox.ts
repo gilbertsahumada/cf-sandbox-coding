@@ -1,3 +1,4 @@
+import { validateChanges, type Proposal, type PullRequest } from './pull-request';
 import { eventFrame } from './event-stream';
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
 import type { RepositoryGrant } from "./github-api";
@@ -52,6 +53,7 @@ export type CommandResult = {
 };
 
 export class AgentSandbox extends DurableObject<Env> {
+  private publishing: Promise<PullRequest> | undefined;
 	private readonly container: Container;
 	private readonly files: Files;
 	private setup: Promise<void> | undefined;
@@ -103,6 +105,8 @@ export class AgentSandbox extends DurableObject<Env> {
             const revision = await this.run(["git", "rev-parse", "HEAD"], repositoryDirectory, {});
             if (revision.exitCode !== 0) return revision;
             this.ctx.storage.kv.put("baseCommit", revision.stdout.trim());
+            const branchName = await this.run(['git', 'symbolic-ref', '--quiet', '--short', 'HEAD'], repositoryDirectory, {});
+            if (branchName.exitCode === 0) this.ctx.storage.kv.put('baseBranch', branchName.stdout.trim());
             this.ctx.storage.kv.put("repositoryReady", true);
         }
         return result;
@@ -156,6 +160,8 @@ export class AgentSandbox extends DurableObject<Env> {
         const status = await this.taskStatus();
         if (status.state === "running") {
             if (Date.now() - (this.ctx.storage.kv.get<number>("startedAt") ?? Date.now()) > 30 * 60_000) {
+                await this.run(['node', '/opt/stop-task.mjs', taskDirectory], '/', {});
+                await this.archiveProposal();
                 const diff = await this.readDiff();
                 if (diff.exitCode === 0) this.saveDiff(diff);
                 this.ctx.storage.kv.put("logs", await this.readLogs());
@@ -167,6 +173,7 @@ export class AgentSandbox extends DurableObject<Env> {
             return;
         }
 
+        await this.archiveProposal();
         this.ctx.storage.kv.put("result", status);
         this.ctx.storage.kv.put("logs", await this.readLogs());
         const diff = await this.readDiff();
@@ -187,6 +194,7 @@ export class AgentSandbox extends DurableObject<Env> {
                         await this.run(['node', '/opt/stop-task.mjs', taskDirectory], '/', {}).catch(() => {});
                     }
                     try { this.ctx.storage.kv.put('logs', await this.readLogs()); } catch { console.warn('Could not archive logs before shutdown'); }
+                    await this.archiveProposal();
                     try { const diff = await this.readDiff(); if (diff.exitCode === 0) this.saveDiff(diff); } catch { console.warn('Could not archive changes before shutdown'); }
                     await this.container.destroy();
                 }
@@ -201,6 +209,57 @@ export class AgentSandbox extends DurableObject<Env> {
             const status = await this.readTask();
             return { state: status.state, containerRunning: this.container.running };
         });
+    }
+
+    private async archiveProposal(): Promise<void> {
+        if (this.ctx.storage.kv.get('proposalChunks') !== undefined || !this.container.running) return;
+        if (!this.ctx.storage.kv.get('githubGrant')) return;
+        try {
+            const baseCommit = this.ctx.storage.kv.get<string>('baseCommit');
+            if (!baseCommit) throw Error('La tarea no conserva su commit inicial.');
+            const result = await this.run(['node', '/opt/export-changes.mjs', repositoryDirectory, baseCommit], '/', {});
+            const value = JSON.parse(result.stdout);
+            if (result.exitCode || value.error) throw Error(value.error || 'No se pudieron conservar los archivos.');
+            const encoded = JSON.stringify(validateChanges(value));
+            const chunks = Math.ceil(encoded.length / 16000);
+            for (let i = 0; i < chunks; i++) this.ctx.storage.kv.put(`proposal:${i}`, encoded.slice(i * 16000, (i + 1) * 16000));
+            this.ctx.storage.kv.put('proposalChunks', chunks);
+            this.ctx.storage.kv.delete('proposalError');
+        } catch (error) {
+            this.ctx.storage.kv.put('proposalError', error instanceof Error ? error.message : 'No se pudo conservar la propuesta.');
+        }
+    }
+
+    async pullRequestStatus(): Promise<{ pr?: PullRequest; available: boolean; reason?: string }> {
+        const pr = this.ctx.storage.kv.get<PullRequest>('pullRequest');
+        if (pr) return { pr, available: true };
+        const state = (await this.readTask()).state;
+        if (['none', 'running', 'stopping'].includes(state)) return { available: false, reason: 'Espera a que termine la tarea.' };
+        if (!this.ctx.storage.kv.get('githubGrant')) return { available: false, reason: 'Ejecuta la tarea con un repositorio del selector de GitHub.' };
+        if (!this.ctx.storage.kv.get('baseBranch')) return { available: false, reason: 'No se conserva una rama de origen. Ejecuta una tarea nueva desde una rama para crear un PR.' };
+        await this.archiveProposal();
+        const available = this.ctx.storage.kv.get('proposalChunks') !== undefined;
+        return { available, reason: available ? undefined : this.ctx.storage.kv.get<string>('proposalError') || 'Esta tarea antigua solo conserva un patch. Ejecuta una tarea nueva para crear un PR.' };
+    }
+
+    async createPullRequest(taskId: string, title: string, description: string): Promise<PullRequest> {
+        if (this.publishing) return this.publishing;
+        this.publishing = (async () => {
+            const status = await this.pullRequestStatus();
+            if (status.pr) return status.pr;
+            if (!status.available) throw Error(status.reason);
+            let encoded = '';
+            const count = this.ctx.storage.kv.get<number>('proposalChunks')!;
+            for (let i = 0; i < count; i++) encoded += this.ctx.storage.kv.get<string>(`proposal:${i}`) || '';
+            const proposal: Proposal = { ...validateChanges(JSON.parse(encoded)),
+                baseCommit: this.ctx.storage.kv.get<string>('baseCommit')!, baseBranch: this.ctx.storage.kv.get<string>('baseBranch')! };
+            const grant = this.ctx.storage.kv.get<RepositoryGrant>('githubGrant')!;
+            const body = `${description}\n\n---\nCreated from sandbox task \`${taskId}\` (${this.ctx.storage.kv.get<string>(taskKey)}).\nStatus: ${ (await this.readTask()).state }.\nTests: review the task activity; checks have not been independently verified.\nBase commit: \`${proposal.baseCommit}\`.\n\nThis draft requires review before merging.`;
+            const pr = await this.env.GITHUB.getByName('owner').createPullRequest(grant, taskId, proposal, title, body);
+            this.ctx.storage.kv.put('pullRequest', pr);
+            return pr;
+        })();
+        try { return await this.publishing; } finally { this.publishing = undefined; }
     }
 
     async streamEvents(cursor: string): Promise<Response> {

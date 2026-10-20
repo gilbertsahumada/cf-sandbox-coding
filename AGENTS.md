@@ -15,7 +15,7 @@ Este proyecto ejecuta Pi y OpenCode en Cloudflare Sandbox con un proveedor compa
 - Entrega un resumen, la evidencia de las comprobaciones y el diff. No afirmes que probaste una integración real si solo usaste datos simulados.
 - Los cambios se revisan antes de incorporarlos a main o desplegarlos. No hagas push, merges ni despliegues desde la tarea del sandbox.
 - No leas ni incluyas secretos en código, logs, prompts, patches o commits. Los archivos .dev.vars, .env y las claves privadas son locales.
-- Conserva las credenciales del modelo y GitHub en el Worker; el contenedor no debe recibirlas. Mantén los permisos de GitHub de lectura y el acceso limitado al repositorio elegido.
+- Conserva las credenciales del modelo y GitHub en el Worker; el contenedor no debe recibirlas. Mantén la red del agente y sus tokens de GitHub en solo lectura. La publicación explícita desde Crear PR usa un token de escritura solo en el Worker, limitado al repositorio elegido.
 - No amplíes permisos, acceso de red, dependencias o presupuestos de ejecución salvo que la tarea lo requiera expresamente.
 - La red del sandbox no permite instalar dependencias. Si faltan herramientas, repórtalo; no inventes resultados de pruebas.
 
