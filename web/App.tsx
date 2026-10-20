@@ -1098,10 +1098,19 @@ export default function App() {
             </span>
           </div>
           <div className="titlebar-actions">
-            <Badge variant="outline">
-              <Cloud className="size-3" />
-              Cloudflare
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" asChild>
+                  <button type="button" className="provider-badge">
+                    <img className="provider-logo" src="/assets/providers/cloudflare.png" alt="" aria-hidden="true" width={20} height={10} />
+                    Cloudflare Sandbox
+                  </button>
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Each coding session runs in an isolated Linux environment on Cloudflare Sandbox.
+              </TooltipContent>
+            </Tooltip>
             <Button
               variant="ghost"
               size="sm"

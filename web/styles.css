@@ -1450,3 +1450,16 @@ a {
   height: 11px;
   margin-right: 5px;
 }
+
+
+.provider-badge {
+  cursor: help;
+}
+.provider-logo {
+  display: inline-block;
+  width: 20px;
+  height: 10px;
+  object-fit: contain;
+  flex: none;
+  filter: grayscale(1) brightness(1.6);
+}
