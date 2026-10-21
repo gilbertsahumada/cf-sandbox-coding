@@ -173,7 +173,7 @@ export default {
     if (new URL(request.url).pathname === "/health" && request.method === "GET")
       return Response.json({ ok: true, agents: Agent.options });
     const match =
-      /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages|files|file)$/.exec(
+      /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages|files|file|runtime)$/.exec(
         new URL(request.url).pathname,
       );
     if (!match) return new Response("Not found", { status: 404 });
@@ -288,6 +288,24 @@ export default {
           }
         }
         return new Response("Method not allowed", { status: 405 });
+      }
+      if (resource === "runtime") {
+        const headers = { "cache-control": "no-store" };
+        if (request.method !== "POST")
+          return new Response("Method not allowed", { status: 405, headers });
+        try {
+          return Response.json(await sandbox.startSession(), { headers });
+        } catch (error) {
+          return Response.json(
+            {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Could not start the session.",
+            },
+            { status: 409, headers },
+          );
+        }
       }
       if (resource === "pull-request") {
         const headers = { "cache-control": "no-store" };

@@ -41,6 +41,7 @@ export type SessionView = "session" | "history" | "new" | "review" | "tools";
 type SessionProps = { runner: Runner; titles: Record<string, string> };
 
 function runtimeLabel(runner: Runner, run: Run) {
+  if (runner.startingIds.has(run.id)) return "Starting session…";
   if (runner.stoppingIds.has(run.id)) return "Stopping session…";
   if (run.state === "cloning") return "Preparing session…";
   const snapshot = runner.sessions.snapshots[run.id];
@@ -475,13 +476,15 @@ export function SessionDetails({
             <div>
               <dt>Cloud session</dt>
               <dd>
-                {runner.runtime.checking
-                  ? "Checking…"
-                  : runner.runtime.running === true
-                    ? "Running"
-                    : runner.runtime.running === false
-                      ? "Stopped"
-                      : "Unknown"}
+                {runner.startingSession
+                  ? "Starting…"
+                  : runner.runtime.checking
+                    ? "Checking…"
+                    : runner.runtime.running === true
+                      ? "Running"
+                      : runner.runtime.running === false
+                        ? "Stopped"
+                        : "Unknown"}
               </dd>
             </div>
             <div>
@@ -541,7 +544,11 @@ export function SessionDetails({
                 ))}
               </nav>
             ) : (
-              <p>No changes to review yet.</p>
+              <p>
+                {runner.diffError
+                  ? "Changes could not be loaded. Use Retry changes in the conversation."
+                  : "No changes to review yet."}
+              </p>
             )}
             <Button variant="outline" disabled={!runner.diff} onClick={review}>
               <FileDiff data-icon="inline-start" />
@@ -565,7 +572,12 @@ export function SessionDetails({
                   <span tabIndex={0}>
                     <Button
                       variant="outline"
-                      disabled={!runner.proposal?.available}
+                      disabled={
+                        !runner.proposal?.available ||
+                        runner.loadingDiff ||
+                        runner.proposalLoading ||
+                        Boolean(runner.changesError)
+                      }
                       onClick={publish}
                     >
                       <GitPullRequest data-icon="inline-start" />

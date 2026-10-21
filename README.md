@@ -18,6 +18,10 @@ A `/?task=ID` link reopens a known task after authentication; `/?new=1` opens an
 
 Overview and the session header separately show whether the agent is working and whether its cloud workspace is running or stopped. Use the Running filter to find active agents and idle workspaces, and stop any session directly from Overview without opening its chat. **Stop session** is available even while the agent is idle; it stops the container while preserving the completed task and its saved context. Status is checked on opening/focusing the page, every 10 seconds while the page is visible, or with the Overview refresh button. Status requests are bounded to three at a time and do not download background tool logs. An unavailable status is shown explicitly. Continuing can restore a stopped session when its current checkpoint is available.
 
+**Start session** (Play) restores a stopped workspace from its current checkpoint without sending a model instruction. The runtime control shows a spinner while starting or while the agent works, a ready indicator for an idle running workspace, and **Stop session** beside the state. Sessions without a recoverable checkpoint cannot be started this way; their archived patch remains available.
+
+Change and PR checks run independently of the tool stream, with a 30-second read timeout. A failed check shows **Retry changes** instead of an indefinite loading message, and cached changes remain reviewable while publication stays blocked until revalidated.
+
 After a turn finishes, the chat shows a change summary with **Review changes** and **Create PR**. Publication opens the review form; an existing proposal offers **View PR**. Creation is blocked while the agent runs, when file edits are unsaved, or when publication requirements are not met.
 
 ## Local setup

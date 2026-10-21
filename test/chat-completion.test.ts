@@ -28,7 +28,10 @@ test("active or loading turns cannot expose a stale publish action", () => {
   for (const state of ["cloning", "running", "stopping", "none"])
     assert.equal(render({ state }), "");
   assert.doesNotMatch(render({ loading: true }), /Create PR/);
-  assert.doesNotMatch(render({ proposal: null }), /Create PR/);
+  const unavailable = render({ proposal: null, onRetry() {} });
+  assert.doesNotMatch(unavailable, /Checking changes/);
+  assert.match(unavailable, /Retry changes/);
+  assert.match(unavailable, /disabled=""/);
 });
 test("publication blockers and unsaved files retain review but disable PR creation", () => {
   for (const props of [
@@ -72,4 +75,17 @@ test("empty results do not imply that a code change was completed", () => {
   const html = render({ changeCount: 0, proposal: { available: false } });
   assert.match(html, /No file changes yet/);
   assert.doesNotMatch(html, /Create PR|Changes ready for review/);
+});
+
+test("failed changes requests stop loading and retain cached review with an explicit retry", () => {
+  const html = render({
+    error: "Could not load changes. Request timed out.",
+    onRetry() {},
+  });
+  assert.doesNotMatch(html, /Checking changes/);
+  assert.match(html, /Request timed out/);
+  assert.match(html, /Retry changes/);
+  assert.match(html, /Review changes/);
+  assert.match(html, /disabled=""/);
+  assert.match(render({ proposalLoading: true }), /Checking changes/);
 });

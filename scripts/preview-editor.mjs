@@ -5,6 +5,9 @@ import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
 const port = Number(process.env.PREVIEW_PORT || 8795);
+const noDone = process.argv.includes("--no-done");
+const failChanges = process.argv.includes("--fail-changes");
+const pendingChanges = process.argv.includes("--pending-changes");
 const longRunning = process.argv.includes("--long-running");
 const slow = process.argv.includes("--slow");
 const slowStart = process.argv.includes("--slow-start");
@@ -298,6 +301,16 @@ createServer(async (req, res) => {
         bytes: Buffer.byteLength(content),
       });
     }
+    if (resource === "runtime" && req.method === "POST") {
+      if (slowStart) await new Promise((resolve) => setTimeout(resolve, 4000));
+      task.containerRunning = true;
+      return json({ state: task.state, containerRunning: true });
+    }
+    if (["diff", "pull-request"].includes(resource) && req.method === "GET") {
+      if (pendingChanges) return;
+      if (failChanges)
+        return json({ message: "Simulated changes request failure." }, 503);
+    }
     if (resource === "task" && req.method === "POST") {
       if (slowStart) await new Promise((resolve) => setTimeout(resolve, 4000));
       let body = "";
@@ -428,6 +441,7 @@ createServer(async (req, res) => {
         `id: 100:0\nevent: stdout\ndata: ${JSON.stringify((archived ? "truncated-leading-event\n" : "") + events.map((event) => JSON.stringify(event)).join("\n") + "\n")}\n\n`,
       );
       const complete = () => {
+        if (noDone) return;
         res.write(
           `event: status\ndata: ${JSON.stringify({ state: task.state, result: task.turns.at(-1)?.response })}\n\nevent: done\ndata: {}\n\n`,
         );

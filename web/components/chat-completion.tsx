@@ -13,6 +13,9 @@ export const ChatCompletion = React.memo(function ChatCompletion({
   hasUnsavedEdits,
   onReview,
   onPublish,
+  proposalLoading = false,
+  error = "",
+  onRetry,
 }: {
   state: RunState;
   changeCount: number;
@@ -21,10 +24,18 @@ export const ChatCompletion = React.memo(function ChatCompletion({
   hasUnsavedEdits: boolean;
   onReview: () => void;
   onPublish: () => void;
+  proposalLoading?: boolean;
+  error?: string;
+  onRetry?: () => void;
 }) {
   if (isActive(state) || state === "none") return null;
   const prURL = proposal?.pr ? githubPullRequestURL(proposal.pr.url) : null;
-  const checking = loading || !proposal;
+  const checking = loading || proposalLoading;
+  const unavailable =
+    error ||
+    (!checking && !proposal
+      ? "Pull request availability could not be confirmed."
+      : "");
   const hasChanges = changeCount > 0 || proposal?.available || Boolean(prURL);
   const blockedReason = hasUnsavedEdits
     ? "Save or discard your file edits before creating a PR."
@@ -42,11 +53,13 @@ export const ChatCompletion = React.memo(function ChatCompletion({
         <strong>
           {checking
             ? "Checking changes…"
-            : prURL
-              ? "Draft PR created"
-              : hasChanges
-                ? "Changes ready for review"
-                : "No file changes yet"}
+            : unavailable
+              ? "Changes need another check"
+              : prURL
+                ? "Draft PR created"
+                : hasChanges
+                  ? "Changes ready for review"
+                  : "No file changes yet"}
         </strong>
         {!checking && changeCount > 0 ? (
           <span>
@@ -57,13 +70,19 @@ export const ChatCompletion = React.memo(function ChatCompletion({
       {!checking ? (
         <>
           <p>
-            {blockedReason ||
+            {unavailable ||
+              blockedReason ||
               (prURL
                 ? "Continue here to refine the work, or open the pull request."
                 : hasChanges
                   ? "Review the changes before publishing, or keep working in this chat."
                   : "You can keep working in this conversation.")}
           </p>
+          {unavailable && onRetry ? (
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              Retry changes
+            </Button>
+          ) : null}
           {hasChanges ? (
             <div className="chat-completion-actions">
               <Button size="sm" variant="outline" onClick={onReview}>
@@ -81,7 +100,11 @@ export const ChatCompletion = React.memo(function ChatCompletion({
               ) : (
                 <Button
                   size="sm"
-                  disabled={!proposal?.available || hasUnsavedEdits}
+                  disabled={
+                    Boolean(unavailable) ||
+                    !proposal?.available ||
+                    hasUnsavedEdits
+                  }
                   onClick={onPublish}
                 >
                   <GitPullRequest data-icon="inline-start" />

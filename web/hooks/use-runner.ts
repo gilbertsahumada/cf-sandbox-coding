@@ -49,7 +49,9 @@ function initialHistory(): Run[] {
 }
 const message = (error: unknown) =>
   error instanceof Error
-    ? error.message
+    ? error.name === "TimeoutError"
+      ? "The request timed out. Try again."
+      : error.message
     : "The operation could not be completed.";
 function taskOutput(status: TaskStatus): string | undefined {
   if ("result" in status) return status.result;
@@ -71,6 +73,9 @@ export function useRunner() {
   const [stoppingIds, setStoppingIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const [startingIds, setStartingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const operations = useRef(new Set<string>());
   const sending = Boolean(selectedId && sendingIds.has(selectedId));
   const stopping = Boolean(selectedId && stoppingIds.has(selectedId));
@@ -82,6 +87,9 @@ export function useRunner() {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [streamState, setStreamState] = useState<StreamState>("");
   const [loadingTask, setLoadingTask] = useState(false);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [diffError, setDiffError] = useState("");
+  const [proposalError, setProposalError] = useState("");
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [revision, setRevision] = useState(0);
   const [activityCount, setActivityCount] = useState(0);
@@ -124,6 +132,7 @@ export function useRunner() {
     operations.current.clear();
     setSendingIds(new Set());
     setStoppingIds(new Set());
+    setStartingIds(new Set());
   }, []);
   const request = useCallback(
     async (
@@ -139,8 +148,10 @@ export function useRunner() {
         cache: "no-store",
         headers: body ? { "content-type": "application/json" } : {},
         body: body ? JSON.stringify(body) : undefined,
-        signal:
-          options.signal || AbortSignal.timeout(runnerConfig.requestTimeoutMs),
+        signal: AbortSignal.any([
+          ...(options.signal ? [options.signal] : []),
+          AbortSignal.timeout(runnerConfig.requestTimeoutMs),
+        ]),
         keepalive: options.keepalive,
       });
       if (epoch !== authEpoch.current)
@@ -388,6 +399,9 @@ export function useRunner() {
     setStreamState("");
     setLoadingTask(false);
     setLoadingDiff(false);
+    setProposalLoading(false);
+    setDiffError("");
+    setProposalError("");
     activityRef.current?.replaceChildren();
     setActivityCount(0);
     if (!connected || !selectedId) return;
@@ -399,7 +413,8 @@ export function useRunner() {
       busyDiff = false,
       again = false,
       terminal = false,
-      authCheckedAt = 0;
+      authCheckedAt = 0,
+      proposalVersion = 0;
     const controller = new AbortController();
     setLoadingTask(true);
     setLoadingDiff(true);
@@ -436,13 +451,32 @@ export function useRunner() {
       }
       return info;
     };
+    const readSignal = () =>
+      AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(runnerConfig.changeReadTimeoutMs),
+      ]);
     const refreshProposal = async () => {
-      const info: Proposal = await (
-        await request(`/sandboxes/${run.id}/pull-request`, undefined, "GET", {
-          signal: controller.signal,
-        })
-      ).json();
-      if (current) setProposal(info);
+      const version = ++proposalVersion;
+      if (current) {
+        setProposalLoading(true);
+        setProposalError("");
+      }
+      try {
+        const info: Proposal = await (
+          await request(`/sandboxes/${run.id}/pull-request`, undefined, "GET", {
+            signal: readSignal(),
+          })
+        ).json();
+        if (current && version === proposalVersion) setProposal(info);
+      } catch (error) {
+        if (current && version === proposalVersion)
+          setProposalError(
+            `Could not check pull request availability. ${message(error)}`,
+          );
+      } finally {
+        if (current && version === proposalVersion) setProposalLoading(false);
+      }
     };
     const queueDiff = (immediate = false) => {
       if (!current) return;
@@ -456,15 +490,20 @@ export function useRunner() {
         async () => {
           timer = undefined;
           busyDiff = true;
+          if (current) {
+            setLoadingDiff(true);
+            setDiffError("");
+          }
           try {
             const text = await (
               await request(`/sandboxes/${run.id}/diff`, undefined, "GET", {
-                signal: controller.signal,
+                signal: readSignal(),
               })
             ).text();
             if (current) setDiff(text);
           } catch (error) {
-            if (current && terminal) report(error);
+            if (current)
+              setDiffError(`Could not load changes. ${message(error)}`);
           } finally {
             if (current) setLoadingDiff(false);
             busyDiff = false;
@@ -477,14 +516,55 @@ export function useRunner() {
         immediate ? 0 : runnerConfig.diffDebounceMs,
       );
     };
+    // Archived changes and PR availability do not depend on SSE completing.
+    queueDiff(true);
+    void refreshProposal();
     const begin = async () => {
       const info = await freshConversation();
       if (!current) return;
       setLoadingTask(false);
-      queueDiff(true);
+      let finalized = false;
+      const finalize = () => {
+        if (!current || finalized) return;
+        finalized = true;
+        terminal = true;
+        setStreamState("Saved");
+        if (isActive(info.state)) {
+          queueDiff(true);
+          void refreshProposal();
+        }
+        void freshConversation()
+          .then((data) => {
+            if (current && !data.turns.length)
+              return request(`/sandboxes/${run.id}/task`, undefined, "GET", {
+                signal: controller.signal,
+              })
+                .then((response) => response.json())
+                .then((status: TaskStatus) => {
+                  const output = taskOutput(status);
+                  if (current && output)
+                    setConversation({
+                      ...data,
+                      turns: [
+                        {
+                          number: 0,
+                          id: "legacy",
+                          prompt: "Task result",
+                          response: output,
+                          state: status.state,
+                          startedAt: run.startedAt || 0,
+                        },
+                      ],
+                    });
+                });
+          })
+          .catch((error) => {
+            if (current) report(error);
+          });
+      };
       source = new EventSource(`/sandboxes/${run.id}/events?turn=${info.turn}`);
       source.onopen = () => {
-        if (current) setStreamState("Live");
+        if (current) setStreamState(terminal ? "Saved" : "Live");
       };
       source.addEventListener("turn", (event) => {
         if (current && JSON.parse(event.data).turn !== info.turn)
@@ -500,7 +580,7 @@ export function useRunner() {
         if (current) {
           const text = JSON.parse(event.data);
           transcript.push(text);
-          if (view?.stdout(text)) queueDiff();
+          if (view?.stdout(text) && !terminal) queueDiff();
         }
       });
       source.addEventListener("stderr", (event) => {
@@ -539,45 +619,13 @@ export function useRunner() {
                   ],
                 },
           );
+        // A final status is sufficient; interrupted streams may never deliver done.
+        if (terminal) finalize();
       });
       source.addEventListener("done", () => {
-        if (!current) return;
         source?.close();
         view?.finish();
-        terminal = true;
-        setStreamState("Saved");
-        queueDiff(true);
-        void freshConversation()
-          .then((data) => {
-            if (current && !data.turns.length)
-              return request(`/sandboxes/${run.id}/task`, undefined, "GET", {
-                signal: controller.signal,
-              })
-                .then((response) => response.json())
-                .then((status: TaskStatus) => {
-                  const output = taskOutput(status);
-                  if (current && output)
-                    setConversation({
-                      ...data,
-                      turns: [
-                        {
-                          number: 0,
-                          id: "legacy",
-                          prompt: "Task result",
-                          response: output,
-                          state: status.state,
-                          startedAt: run.startedAt || 0,
-                        },
-                      ],
-                    });
-                });
-          })
-          .catch((error) => {
-            if (current) report(error);
-          });
-        void refreshProposal().catch((error) => {
-          if (current) report(error);
-        });
+        finalize();
       });
       source.onerror = () => {
         if (!current || terminal) return;
@@ -760,6 +808,30 @@ export function useRunner() {
       }
     }
   };
+  const startSession = async (id: string) => {
+    if (!connected || operations.current.has(id)) return;
+    const epoch = authEpoch.current;
+    operations.current.add(id);
+    setStartingIds((items) => new Set(items).add(id));
+    sessions.suspend(id);
+    try {
+      await request(`/sandboxes/${id}/runtime`, {}, "POST");
+      if (epoch === authEpoch.current && selectedRef.current === id)
+        setRevision((value) => value + 1);
+    } catch (error) {
+      if (epoch === authEpoch.current) report(error);
+    } finally {
+      operations.current.delete(id);
+      if (epoch === authEpoch.current) {
+        setStartingIds((items) => {
+          const next = new Set(items);
+          next.delete(id);
+          return next;
+        });
+        void sessions.resume(id);
+      }
+    }
+  };
   const stopSession = async (id: string) => {
     const run = runsRef.current.find((item) => item.id === id);
     if (!run || run.state === "cloning" || operations.current.has(id)) return;
@@ -797,6 +869,8 @@ export function useRunner() {
   const stop = () => (selectedId ? stopSession(selectedId) : Promise.resolve());
   const publish = async (title: string, description: string) => {
     if (!selected) return;
+    if (loadingDiff || proposalLoading || diffError || proposalError)
+      throw Error("Retry the changes check before creating a pull request.");
     const id = selected.id;
     await request(`/sandboxes/${id}/pull-request`, { title, description });
     const info: Proposal = await (
@@ -816,6 +890,12 @@ export function useRunner() {
   };
   return {
     runtime,
+    startSession,
+    startingIds,
+    startingSession: Boolean(selectedId && startingIds.has(selectedId)),
+    diffError,
+    changesError: diffError || proposalError,
+    proposalLoading,
     sessions,
     stoppingIds,
     sendingIds,
