@@ -1,3 +1,10 @@
+import {
+  SessionNavigation,
+  SessionHistory,
+  SessionDetails,
+  type SessionView,
+} from "@/components/session-navigation";
+import { sessionTitle, repositoryLabel } from "@/lib/session-presentation";
 import { startupText } from "@/lib/session-start";
 import {
   memo,
@@ -16,10 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  Cloud,
-  CloudCheck,
   Eye,
-  FolderGit2,
   LogIn,
   LogOut,
   UserRound,
@@ -35,12 +39,9 @@ import {
   Files,
   GitBranch,
   GitPullRequest,
-  GitFork as Github,
   MessageSquare,
   PanelBottom,
-  PanelLeftClose,
   Plus,
-  Search,
   Settings2,
   Square,
   SquareTerminal,
@@ -51,7 +52,6 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupInput,
   InputGroupTextarea,
   InputGroupButton,
   InputGroupText,
@@ -64,11 +64,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Empty,
@@ -86,13 +82,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import {
-  FileIcon,
-  TaskStateIcon,
-  TaskBadge,
-} from "@/components/workspace-indicators";
+import { FileIcon, TaskStateIcon } from "@/components/workspace-indicators";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AuthDialog,
@@ -116,12 +107,16 @@ import {
 } from "@/lib/editor";
 import { agentNames, isActive, stateNames } from "@/lib/types";
 const MarkdownResponse = lazy(() =>
-  import("@/components/markdown-response").then(module => ({ default: module.MarkdownResponse })),
+  import("@/components/markdown-response").then((module) => ({
+    default: module.MarkdownResponse,
+  })),
 );
 function AgentResponse({ text }: { text: string }) {
-  return <Suspense fallback={<p className="editor-hint">Loading response…</p>}>
-    <MarkdownResponse text={text} />
-  </Suspense>;
+  return (
+    <Suspense fallback={<p className="editor-hint">Loading response…</p>}>
+      <MarkdownResponse text={text} />
+    </Suspense>
+  );
 }
 function IconButton({
   icon: Icon,
@@ -149,171 +144,6 @@ function IconButton({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
-}
-function SessionSidebar({
-  runner,
-  files,
-  activePath,
-  openFile,
-  newSession,
-  settings,
-  close,
-  workspace,
-  openSource,
-}: {
-  workspace: RepositoryWorkspace;
-  openSource: (path: string) => void;
-  runner: Runner;
-  files: ChangedFile[];
-  activePath: string | null;
-  openFile: (path: string) => void;
-  newSession: () => void;
-  settings: () => void;
-  close: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const matches = runner.runs.filter((run) =>
-    `${run.repository} ${agentNames[run.agent]} ${run.id}`
-      .toLocaleLowerCase()
-      .includes(search.toLocaleLowerCase()),
-  );
-  return (
-    <aside className="session-sidebar" aria-label="Sessions and files">
-      <div className="panel-heading">
-        <h2>
-          <FolderGit2 className="size-3.5" aria-hidden="true" />
-          Explorer
-        </h2>
-        <IconButton
-          icon={PanelLeftClose}
-          label="Hide sessions"
-          onClick={close}
-        />
-      </div>
-      <div className="sidebar-actions">
-        <Button variant="outline" className="w-full" onClick={newSession}>
-          <Plus data-icon="inline-start" />
-          New session
-        </Button>
-      </div>
-      <FileExplorer workspace={workspace} onOpen={openSource} />
-      <Collapsible className="recent-sessions">
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="section-toggle">
-            <ChevronRight data-icon="inline-start" />
-            Sessions<Badge variant="secondary">{runner.runs.length}</Badge>
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          {" "}
-          <InputGroup>
-            <InputGroupInput
-              aria-label="Search sessions"
-              placeholder="Search sessions…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <InputGroupAddon>
-              <Search aria-hidden="true" />
-            </InputGroupAddon>
-          </InputGroup>{" "}
-          <div className="session-list">
-            <nav aria-label="Recent sessions">
-              {matches.map((run) => (
-                <Button
-                  key={run.id}
-                  variant={
-                    runner.selected?.id === run.id ? "secondary" : "ghost"
-                  }
-                  className="session-entry"
-                  onClick={() => runner.activate(run.id)}
-                  aria-current={
-                    runner.selected?.id === run.id ? "page" : undefined
-                  }
-                >
-                  <TaskStateIcon state={run.state} data-icon="inline-start" />
-                  <span className="session-entry-copy">
-                    <strong className="truncate">
-                      {run.repository
-                        .replace("https://github.com/", "")
-                        .replace(/\.git$/, "")}
-                    </strong>
-                    <span>
-                      <AgentLogo agent={run.agent} className="session-agent-logo" />
-                      {agentNames[run.agent]}
-                      <span className="entry-separator" />
-                      {stateNames[run.state]}
-                    </span>
-                  </span>
-                </Button>
-              ))}
-              {!matches.length ? (
-                <p className="sidebar-empty">
-                  {search
-                    ? "No matching sessions."
-                    : "Your sessions will appear here."}
-                </p>
-              ) : null}
-            </nav>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-      <Separator />
-      <div className="section-heading">
-        <ChevronDown className="size-3.5" />
-        <h3>Repository changes</h3>
-        <Badge variant="secondary">{files.length}</Badge>
-      </div>
-      <nav className="changed-files" aria-label="Changed files">
-        {files.map((file) => (
-          <Button
-            key={file.path}
-            variant={activePath === file.path ? "secondary" : "ghost"}
-            className="file-entry"
-            onClick={() => openFile(file.path)}
-            title={file.path}
-          >
-            <FileIcon path={file.path} data-icon="inline-start" />
-            <span className="truncate">{file.path}</span>
-            <span className={cn("file-status", `status-${file.status}`)}>
-              {file.status}
-            </span>
-          </Button>
-        ))}
-        {!files.length &&
-        (runner.loadingDiff ||
-          runner.loadingTask ||
-          (runner.checking && Boolean(runner.selected))) ? (
-          <div
-            className="flex flex-col gap-2 px-3"
-            aria-label="Loading files"
-            aria-busy="true"
-          >
-            <Skeleton className="h-7 w-full" />
-            <Skeleton className="h-7 w-4/5" />
-            <Skeleton className="h-7 w-3/5" />
-          </div>
-        ) : !files.length ? (
-          <p className="sidebar-empty">
-            Files will appear when the agent makes changes.
-          </p>
-        ) : null}
-      </nav>
-      <div className="sidebar-bottom">
-        <Button
-          variant="ghost"
-          className="w-full justify-start"
-          onClick={settings}
-        >
-          <Github data-icon="inline-start" />
-          {runner.github?.connected
-            ? runner.github.accounts.join(", ")
-            : "Connect GitHub"}
-          <ChevronRight data-icon="inline-end" />
-        </Button>
-      </div>
-    </aside>
   );
 }
 const DiffPane = memo(function DiffPane({ file }: { file: ChangedFile }) {
@@ -357,23 +187,34 @@ function ActivityPanel({
   const [follow, setFollow] = useState(true);
   const [activityTab, setActivityTab] = useState("tools");
   const responseRef = useRef<HTMLDivElement>(null);
-  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
-  const response = startup ? startupText(startup) :
-    runner.liveText ?? runner.conversation?.turns.at(-1)?.response ?? "";
+  const startup =
+    runner.startup?.task === runner.selected?.id ? runner.startup : null;
+  const response = startup
+    ? startupText(startup)
+    : (runner.liveText ?? runner.conversation?.turns.at(-1)?.response ?? "");
   useEffect(() => {
-    if (follow && runner.selected && isActive(runner.selected.state) && responseRef.current)
+    if (
+      follow &&
+      runner.selected &&
+      isActive(runner.selected.state) &&
+      responseRef.current
+    )
       responseRef.current.scrollTop = responseRef.current.scrollHeight;
   }, [response, follow, activityTab, runner.selected?.state]);
   return (
-    <Tabs value={activityTab} onValueChange={setActivityTab} className="activity-root">
-    <Collapsible open={expanded} onOpenChange={toggle} asChild>
-      <section
-        className={cn("activity-panel", !expanded && "collapsed")}
-        aria-label="Tool activity"
-      >
-        <div className="panel-heading">
-          <span className="activity-heading">
-            <SquareTerminal className="size-3.5" />
+    <Tabs
+      value={activityTab}
+      onValueChange={setActivityTab}
+      className="activity-root"
+    >
+      <Collapsible open={expanded} onOpenChange={toggle} asChild>
+        <section
+          className={cn("activity-panel", !expanded && "collapsed")}
+          aria-label="Tool activity"
+        >
+          <div className="panel-heading">
+            <span className="activity-heading">
+              <SquareTerminal className="size-3.5" />
 
               <TabsList variant="line" aria-label="Activity view">
                 <TabsTrigger value="tools">
@@ -381,77 +222,96 @@ function ActivityPanel({
                 </TabsTrigger>
                 <TabsTrigger value="response">Response</TabsTrigger>
               </TabsList>
-
-          </span>
-          <div className="flex items-center gap-1">
-            <span className="stream-label" role="status">
-              {["Connecting", "Reconnecting"].includes(runner.streamState) ? (
-                <Spinner aria-hidden="true" />
-              ) : runner.streamState === "Saved" ? (
-                <Check aria-hidden="true" />
-              ) : runner.streamState === "Live" ? (
-                <Radio aria-hidden="true" />
-              ) : null}
-              {startup ? startup.stage === "failed" ? "Preparation failed" : "Preparing" : runner.streamState || "No activity"}
             </span>
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-pressed={follow}
-              onClick={() => {
-                setFollow((value) => !value);
-                runner.followRef.current = !follow;
-              }}
-            >
-              {follow ? (
-                <ChevronsDown data-icon="inline-start" />
-              ) : (
-                <Pause data-icon="inline-start" />
-              )}
-              {follow ? "Following" : "Paused"}
-            </Button>
-            <CollapsibleTrigger asChild>
+            <div className="flex items-center gap-1">
+              <span className="stream-label" role="status">
+                {["Connecting", "Reconnecting"].includes(runner.streamState) ? (
+                  <Spinner aria-hidden="true" />
+                ) : runner.streamState === "Saved" ? (
+                  <Check aria-hidden="true" />
+                ) : runner.streamState === "Live" ? (
+                  <Radio aria-hidden="true" />
+                ) : null}
+                {startup
+                  ? startup.stage === "failed"
+                    ? "Preparation failed"
+                    : "Preparing"
+                  : runner.streamState || "No activity"}
+              </span>
               <Button
                 variant="ghost"
-                size="icon-xs"
-                aria-label={expanded ? "Hide activity" : "Show activity"}
+                size="xs"
+                aria-pressed={follow}
+                onClick={() => {
+                  setFollow((value) => !value);
+                  runner.followRef.current = !follow;
+                }}
               >
-                {expanded ? <ChevronDown /> : <PanelBottom />}
+                {follow ? (
+                  <ChevronsDown data-icon="inline-start" />
+                ) : (
+                  <Pause data-icon="inline-start" />
+                )}
+                {follow ? "Following" : "Paused"}
               </Button>
-            </CollapsibleTrigger>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={expanded ? "Hide activity" : "Show activity"}
+                >
+                  {expanded ? <ChevronDown /> : <PanelBottom />}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
           </div>
-        </div>
-        <CollapsibleContent
-          forceMount
-          className="activity-scroll"
-          hidden={!expanded}
-        >
-          <TabsContent value="tools" forceMount hidden={activityTab !== "tools"} className="activity-content">
-          {startup ? <div className="startup-progress" role="status">
-            {startup.stage !== "failed" ? <Spinner aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
-            <span>{startupText(startup)}</span>
-          </div> : null}
+          <CollapsibleContent
+            forceMount
+            className="activity-scroll"
+            hidden={!expanded}
+          >
+            <TabsContent
+              value="tools"
+              forceMount
+              hidden={activityTab !== "tools"}
+              className="activity-content"
+            >
+              {startup ? (
+                <div className="startup-progress" role="status">
+                  {startup.stage !== "failed" ? (
+                    <Spinner aria-hidden="true" />
+                  ) : (
+                    <CircleAlert aria-hidden="true" />
+                  )}
+                  <span>{startupText(startup)}</span>
+                </div>
+              ) : null}
 
-          <div
-            className="activity-output"
-            ref={runner.activityRef}
-            tabIndex={0}
-            aria-label="Execution logs"
-          />
-          </TabsContent>{activityTab === "response" ? (
-            <TabsContent value="response" className="activity-response" ref={responseRef}>
-              {response ? (
-                <AgentResponse text={response} />
-              ) : (
-                <p className="editor-hint">
-                  The agent response will appear here.
-                </p>
-              )}
+              <div
+                className="activity-output"
+                ref={runner.activityRef}
+                tabIndex={0}
+                aria-label="Execution logs"
+              />
             </TabsContent>
-          ) : null}
-        </CollapsibleContent>
-      </section>
-    </Collapsible>
+            {activityTab === "response" ? (
+              <TabsContent
+                value="response"
+                className="activity-response"
+                ref={responseRef}
+              >
+                {response ? (
+                  <AgentResponse text={response} />
+                ) : (
+                  <p className="editor-hint">
+                    The agent response will appear here.
+                  </p>
+                )}
+              </TabsContent>
+            ) : null}
+          </CollapsibleContent>
+        </section>
+      </Collapsible>
     </Tabs>
   );
 }
@@ -462,8 +322,6 @@ function Workspace({
   setActivePath,
   newSession,
   publish,
-  logsExpanded,
-  setLogsExpanded,
   workspace,
 }: {
   workspace: RepositoryWorkspace;
@@ -473,8 +331,6 @@ function Workspace({
   setActivePath: (path: string) => void;
   newSession: () => void;
   publish: () => void;
-  logsExpanded: boolean;
-  setLogsExpanded: (value: boolean) => void;
 }) {
   const file = files.find((item) => item.path === activePath) || files[0];
   const additions = files.reduce((sum, item) => sum + item.added, 0),
@@ -688,11 +544,6 @@ function Workspace({
           <span>against the initial commit</span>
         </span>
       </div>
-      <ActivityPanel
-        runner={runner}
-        expanded={logsExpanded}
-        toggle={() => setLogsExpanded(!logsExpanded)}
-      />
     </main>
   );
 }
@@ -701,11 +552,13 @@ function AgentChat({
   workspace,
   newSession,
   drafts,
+  showTools,
 }: {
   runner: Runner;
   workspace: RepositoryWorkspace;
   newSession: () => void;
   drafts: RefObject<Record<string, string>>;
+  showTools: () => void;
 }) {
   const draftKey = runner.selected?.id || "new";
   const [draft, setDraft] = useState(() => drafts.current[draftKey] || ""),
@@ -714,9 +567,21 @@ function AgentChat({
     formRef = useRef<HTMLFormElement>(null),
     lastTurn = useRef(-1);
   const active = runner.selected ? isActive(runner.selected.state) : false;
-  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
+  const startup =
+    runner.startup?.task === runner.selected?.id ? runner.startup : null;
   const chat = runner.conversation,
-    turns = chat?.turns.length ? chat.turns : startup ? [{ id: startup.task, number: 1, prompt: startup.prompt, response: startupText(startup) }] : [];
+    turns = chat?.turns.length
+      ? chat.turns
+      : startup
+        ? [
+            {
+              id: startup.task,
+              number: 1,
+              prompt: startup.prompt,
+              response: startupText(startup),
+            },
+          ]
+        : [];
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -748,56 +613,14 @@ function AgentChat({
   }
   return (
     <aside className="agent-panel" aria-label="Agent chat">
-      <div className="panel-heading">
-        <h2>
-          <MessageSquare className="size-3.5" />
-          Agent
-        </h2>
-        <div className="flex items-center gap-2">
-          {runner.selected ? (
-            <Badge variant="secondary">
-              <AgentLogo agent={runner.selected.agent} data-icon="inline-start" />
-              {agentNames[runner.selected.agent]}
-            </Badge>
-          ) : null}
-          <IconButton
-            icon={Plus}
-            label="New agent session"
-            onClick={newSession}
-          />
-        </div>
-      </div>
-      <div className="chat-session-heading">
-        <Cloud className="size-4" />
-        <div>
-          <strong>
-            {runner.selected ? "Session conversation" : "Your cloud agent"}
-          </strong>
-          <span>
-            {runner.selected
-              ? runner.selected.id.slice(0, 18)
-              : "Pi or OpenCode, from your browser"}
-          </span>
-        </div>
-        {chat?.checkpointSaved ? (
-          <Tooltip>
-            <TooltipTrigger>
-              <CloudCheck
-                className="size-4 text-muted-foreground"
-                aria-label="Context and changes saved"
-              />
-            </TooltipTrigger>
-            <TooltipContent>Context and changes saved</TooltipContent>
-          </Tooltip>
-        ) : null}
-      </div>
       <div
         className="conversation-scroll"
         ref={scrollRef}
         tabIndex={0}
         aria-label="Conversation messages"
       >
-        {!startup && (runner.loadingTask || (runner.checking && runner.selected)) ? (
+        {!startup &&
+        (runner.loadingTask || (runner.checking && runner.selected)) ? (
           <div className="flex flex-col gap-4 p-4">
             <Skeleton className="h-12 w-4/5 self-end" />
             <Skeleton className="h-24 w-full" />
@@ -872,6 +695,19 @@ function AgentChat({
           </Empty>
         )}
       </div>
+      {runner.selected ? (
+        <Button
+          variant="ghost"
+          className="conversation-activity"
+          onClick={showTools}
+        >
+          <SquareTerminal data-icon="inline-start" />
+          Tool activity{" "}
+          <Badge variant="secondary">{runner.activityCount}</Badge>
+          <span>{runner.streamState || "View output"}</span>
+          <ChevronRight data-icon="inline-end" />
+        </Button>
+      ) : null}
       <div className="chat-composer">
         <div className="composer-context">
           {runner.selected ? (
@@ -880,13 +716,17 @@ function AgentChat({
             <MessageSquare className="size-3" aria-hidden="true" />
           )}
           <span>
-            {startup?.stage === "failed" ? "Preparation failed" : active
-              ? (startup ? startupText(startup) : "The agent is working")
-              : chat?.canContinue
-                ? "Waiting for your reply"
-                : runner.selected
-                  ? "Saved conversation"
-                  : "No session open"}
+            {startup?.stage === "failed"
+              ? "Preparation failed"
+              : active
+                ? startup
+                  ? startupText(startup)
+                  : "The agent is working"
+                : chat?.canContinue
+                  ? "Waiting for your reply"
+                  : runner.selected
+                    ? "Saved conversation"
+                    : "No session open"}
           </span>
         </div>
         <form ref={formRef} onSubmit={submit}>
@@ -911,7 +751,7 @@ function AgentChat({
                     drafts.current[draftKey] = event.target.value;
                   }}
                   maxLength={32000}
-                  rows={3}
+                  rows={2}
                   disabled={
                     !runner.connected ||
                     !runner.selected ||
@@ -977,15 +817,17 @@ function AgentChat({
           </Alert>
         ) : null}
         <p className="composer-hint">
-          {startup?.stage === "failed" ? "Open New session to review your instruction and try again." : startup
-            ? "Preparation is in progress. Your instruction is shown above."
-            : active
-            ? "Stop the task to change direction."
-            : chat?.warning ||
-              chat?.reason ||
-              (chat?.checkpointSaved
-                ? "Context and changes saved in the cloud."
-                : "The agent works in an isolated workspace.")}
+          {startup?.stage === "failed"
+            ? "Open New session to review your instruction and try again."
+            : startup
+              ? "Preparation is in progress. Your instruction is shown above."
+              : active
+                ? "Stop the task to change direction."
+                : chat?.warning ||
+                  chat?.reason ||
+                  (chat?.checkpointSaved
+                    ? "Context and changes saved in the cloud."
+                    : "The agent works in an isolated workspace.")}
         </p>
       </div>
     </aside>
@@ -995,7 +837,75 @@ export default function App() {
   const runner = useRunner();
   const workspace = useWorkspace(runner);
   const drafts = useRef<Record<string, string>>({});
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [view, setView] = useState<SessionView>("session");
+  const [sidebarVisible, setSidebarVisible] = useState(
+    () =>
+      !matchMedia("(max-width: 900px)").matches ||
+      !new URL(location.href).searchParams.has("task"),
+  );
+  const [detailsVisible, setDetailsVisible] = useState(
+    () => matchMedia("(min-width: 1151px)").matches,
+  );
+  useEffect(() => {
+    const query = matchMedia("(max-width: 900px)");
+    const compact = () => {
+      if (query.matches) {
+        setSidebarVisible(false);
+        setDetailsVisible(false);
+      }
+    };
+    query.addEventListener("change", compact);
+    return () => query.removeEventListener("change", compact);
+  }, []);
+  useEffect(() => {
+    if (matchMedia("(max-width: 900px)").matches) setDetailsVisible(false);
+  }, [view]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const files = useMemo(() => parseDiff(runner.diff), [runner.diff]);
+  const startup =
+    runner.startup?.task === runner.selected?.id ? runner.startup : null;
+  const firstPrompt =
+    startup?.prompt ||
+    runner.conversation?.turns.find((turn) => turn.prompt)?.prompt;
+  useEffect(() => {
+    if (runner.connected && runner.selected && firstPrompt)
+      setTitles((previous) =>
+        previous[runner.selected!.id] === firstPrompt
+          ? previous
+          : { ...previous, [runner.selected!.id]: firstPrompt },
+      );
+  }, [runner.connected, runner.selected?.id, firstPrompt]);
+  useEffect(() => {
+    if (!runner.connected) {
+      drafts.current = {};
+      setTitles({});
+      setView("session");
+    }
+  }, [runner.connected]);
+  const newSession = () => {
+    if (!runner.connected) runner.setAuthOpen(true);
+    else {
+      setView("new");
+      if (matchMedia("(max-width: 900px)").matches) setSidebarVisible(false);
+    }
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        newSession();
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [runner.connected]);
+  useEffect(() => {
+    setActivePath(null);
+  }, [runner.selected?.id]);
   async function logout() {
     setExiting(true);
     try {
@@ -1006,123 +916,40 @@ export default function App() {
       setExiting(false);
     }
   }
-  useEffect(() => {
-    if (!runner.connected) drafts.current = {};
-  }, [runner.connected]);
-  const [newOpen, setNewOpen] = useState(false),
-    [settingsOpen, setSettingsOpen] = useState(false),
-    [publishOpen, setPublishOpen] = useState(false),
-    [sidebarVisible, setSidebarVisible] = useState(true),
-    [logsExpanded, setLogsExpanded] = useState(true);
-  const [activePath, setActivePath] = useState<string | null>(null),
-    [mobilePane, setMobilePane] = useState("chat");
-  const [mobile, setMobile] = useState(
-    () => matchMedia("(max-width: 900px)").matches,
-  );
-  const files = useMemo(() => parseDiff(runner.diff), [runner.diff]);
-  const newSession = () => {
-    if (!runner.connected) runner.setAuthOpen(true);
-    else setNewOpen(true);
-  };
-  useEffect(() => {
-    const query = matchMedia("(max-width: 900px)");
-    const change = () => setMobile(query.matches);
-    query.addEventListener("change", change);
-    return () => query.removeEventListener("change", change);
-  }, []);
-  useEffect(() => {
-    setActivePath(null);
-  }, [runner.selected?.id]);
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        if (runner.connected) setNewOpen(true);
-        else runner.setAuthOpen(true);
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [runner.connected, runner.setAuthOpen]);
-  const openFile = (path: string) => {
+  function selectSession(id: string, stayInHistory = false) {
+    runner.activate(id);
+    if (!stayInHistory) {
+      setView("session");
+      if (matchMedia("(max-width: 900px)").matches) setSidebarVisible(false);
+    }
+  }
+  function openFile(path: string) {
+    setDetailsVisible(false);
     setActivePath(path);
     workspace.setMode("changes");
-    if (mobile) setMobilePane("changes");
-  };
-  const sidebar = (
-    <SessionSidebar
-      runner={runner}
-      files={files}
-      activePath={activePath || files[0]?.path || null}
-      openFile={openFile}
-      newSession={newSession}
-      settings={() =>
-        runner.connected ? setSettingsOpen(true) : runner.setAuthOpen(true)
-      }
-      workspace={workspace}
-      openSource={(path) => {
-        void workspace.open(path);
-        if (mobile) setMobilePane("changes");
-      }}
-      close={() => setSidebarVisible(false)}
-    />
-  );
-  const workspacePanel = (
-    <Workspace
-      runner={runner}
-      files={files}
-      activePath={activePath}
-      setActivePath={setActivePath}
-      newSession={newSession}
-      publish={() => setPublishOpen(true)}
-      logsExpanded={logsExpanded}
-      setLogsExpanded={setLogsExpanded}
-      workspace={workspace}
-    />
-  );
-  const agent = (
-    <AgentChat
-      key={runner.selected?.id || "new"}
-      runner={runner}
-      newSession={newSession}
-      drafts={drafts}
-      workspace={workspace}
-    />
-  );
+    setView("review");
+  }
+  function openSource(path: string) {
+    setDetailsVisible(false);
+    void workspace.open(path);
+    setView("review");
+  }
+  const title = runner.selected
+    ? sessionTitle(runner.selected, titles)
+    : "Your cloud workspace";
   return (
     <TooltipProvider>
-      <div className="editor-shell">
+      <div className="editor-shell agent-workspace">
         <header className="titlebar">
           <div className="brand">
             <span className="brand-mark">
-              <Code2 className="size-4" />
+              <Code2 />
             </span>
             <strong>Sandbox</strong>
             <span className="brand-divider" />
             <span className="brand-subtitle">Workspace</span>
           </div>
-          <div className="titlebar-project">
-            <Cloud className="size-3.5" />
-            <span className="truncate">
-              {runner.selected?.repository
-                .replace("https://github.com/", "")
-                .replace(/\.git$/, "") || "Cloud code editor"}
-            </span>
-          </div>
           <div className="titlebar-actions">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" asChild>
-                  <button type="button" className="provider-badge">
-                    <img className="provider-logo" src="/assets/providers/cloudflare.png" alt="" aria-hidden="true" width={20} height={10} />
-                    Cloudflare Sandbox
-                  </button>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                Each coding session runs in an isolated Linux environment on Cloudflare Sandbox.
-              </TooltipContent>
-            </Tooltip>
             <Button
               variant="ghost"
               size="sm"
@@ -1133,7 +960,7 @@ export default function App() {
               }
             >
               {runner.checking || exiting ? (
-                <Spinner data-icon="inline-start" aria-hidden="true" />
+                <Spinner data-icon="inline-start" />
               ) : runner.connected ? (
                 <LogOut data-icon="inline-start" />
               ) : (
@@ -1144,7 +971,7 @@ export default function App() {
                 : runner.checking
                   ? "Connecting…"
                   : runner.connected
-                    ? "Connected · sign out"
+                    ? "Sign out"
                     : "Connect"}
             </Button>
           </div>
@@ -1163,35 +990,42 @@ export default function App() {
             </Button>
           </Alert>
         ) : null}
-        <div className="editor-body">
-          <nav className="activity-rail" aria-label="Workspace panels">
+        <div
+          className="session-layout"
+          data-sidebar={sidebarVisible}
+          data-details={detailsVisible}
+          data-view={view}
+        >
+          <nav className="activity-rail" aria-label="Workspace navigation">
             <IconButton
               icon={Files}
-              label="Sessions and changes"
+              label="Overview"
               pressed={sidebarVisible}
               onClick={() => {
+                setDetailsVisible(false);
                 setSidebarVisible((value) => !value);
-                setMobilePane("sessions");
               }}
             />
             <IconButton
               icon={MessageSquare}
-              label="Agent conversation"
+              label="Conversation"
+              pressed={view === "session"}
               onClick={() => {
-                if (mobile) setMobilePane("chat");
-                else document.getElementById("chat-message")?.focus();
+                setDetailsVisible(false);
+                setView("session");
+                if (matchMedia("(max-width: 900px)").matches)
+                  setSidebarVisible(false);
               }}
             />
             <IconButton
               icon={SquareTerminal}
               label="Tool activity"
-              pressed={logsExpanded}
+              pressed={view === "tools"}
               onClick={() => {
-                setLogsExpanded((value) => !value);
-                if (mobile) {
-                  setMobilePane("changes");
-                  if (runner.selected) runner.activate(runner.selected.id);
-                }
+                setDetailsVisible(false);
+                setView("tools");
+                if (matchMedia("(max-width: 900px)").matches)
+                  setSidebarVisible(false);
               }}
             />
             <div className="rail-spacer" />
@@ -1205,118 +1039,206 @@ export default function App() {
               }
             />
           </nav>
-          {mobile ? (
-            <div className="mobile-workspace">
-              <ToggleGroup
-                type="single"
-                value={mobilePane}
-                onValueChange={(value) => {
-                  if (value) {
-                    setMobilePane(value);
-                    if (value === "changes" && runner.selected)
-                      runner.activate(runner.selected.id);
-                  }
-                }}
-                aria-label="Workspace view"
-                variant="outline"
-                spacing={0}
-              >
-                <ToggleGroupItem value="sessions">
-                  <Files data-icon="inline-start" />
-                  Sessions
-                </ToggleGroupItem>
-                <ToggleGroupItem value="changes">
-                  <Code2 data-icon="inline-start" />
-                  Editor
-                </ToggleGroupItem>
-                <ToggleGroupItem value="chat">
-                  <MessageSquare data-icon="inline-start" />
-                  Chat
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <div className="mobile-pane">
-                {mobilePane === "sessions"
-                  ? sidebar
-                  : mobilePane === "changes"
-                    ? workspacePanel
-                    : agent}
+          <div className="navigation-surface">
+            <SessionNavigation
+              key={runner.connected ? "authenticated" : "anonymous"}
+              runner={runner}
+              titles={titles}
+              view={view}
+              onSelect={selectSession}
+              newSession={newSession}
+              history={() => {
+                setView("history");
+                if (matchMedia("(max-width: 900px)").matches)
+                  setSidebarVisible(false);
+              }}
+              settings={() =>
+                runner.connected
+                  ? setSettingsOpen(true)
+                  : runner.setAuthOpen(true)
+              }
+              close={() => setSidebarVisible(false)}
+            />
+          </div>
+          <main className="session-surface" aria-label="Session workspace">
+            <header className="session-toolbar">
+              <div className="session-heading-copy">
+                <span className="view-breadcrumb">
+                  Overview <ChevronRight />{" "}
+                  {view === "new"
+                    ? "New session"
+                    : view === "history"
+                      ? "Sessions"
+                      : view === "review"
+                        ? "Review"
+                        : view === "tools"
+                          ? "Activity"
+                          : "Session"}
+                </span>
+                <h1>
+                  {view === "new"
+                    ? "New cloud session"
+                    : view === "history"
+                      ? "Sessions"
+                      : title}
+                </h1>
+                {view !== "new" && view !== "history" && runner.selected ? (
+                  <div className="session-metadata">
+                    <AgentLogo agent={runner.selected.agent} />
+                    {agentNames[runner.selected.agent]}
+                    <span>·</span>
+                    <span className="truncate">
+                      {repositoryLabel(runner.selected.repository)}
+                    </span>
+                    <span>·</span>
+                    <TaskStateIcon state={runner.selected.state} />
+                    {stateNames[runner.selected.state]}
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : (
-            <ResizablePanelGroup
-              orientation="horizontal"
-              className="editor-panels"
-            >
-              {sidebarVisible ? (
-                <>
-                  <ResizablePanel
-                    id="sessions"
-                    defaultSize="20%"
-                    minSize="190px"
-                    maxSize="360px"
+              <div className="session-header-actions">
+                {runner.selected && isActive(runner.selected.state) ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={runner.busy || runner.stopping}
+                    onClick={() => void runner.stop()}
                   >
-                    {sidebar}
-                  </ResizablePanel>
-                  <ResizableHandle />
-                </>
-              ) : null}
-              <ResizablePanel
-                id="workspace"
-                defaultSize={sidebarVisible ? "47%" : "64%"}
-                minSize="320px"
-              >
-                {workspacePanel}
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel
-                id="agent"
-                defaultSize={sidebarVisible ? "33%" : "36%"}
-                minSize="310px"
-              >
-                {agent}
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          )}
-        </div>
-        <footer className="statusbar">
-          <div>
-            <Cloud className="size-3.5" />
-            <span>
-              {runner.connected
-                ? "Cloudflare Sandbox"
-                : "Sign in to your workspace"}
-            </span>
-            {runner.selected ? (
-              <>
-                <span className="statusbar-divider" />
-                <GitBranch className="size-3" />
-                <span>{runner.selected.ref || "Default branch"}</span>
-              </>
+                    {runner.stopping ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <Square data-icon="inline-start" />
+                    )}
+                    {runner.stopping ? "Stopping…" : "Stop"}
+                  </Button>
+                ) : null}
+                {runner.selected && !["new", "history"].includes(view) ? (
+                  <IconButton
+                    icon={CircleHelp}
+                    label="Session details"
+                    pressed={detailsVisible}
+                    onClick={() => setDetailsVisible((value) => !value)}
+                  />
+                ) : null}
+              </div>
+            </header>
+            {runner.selected && !["new", "history"].includes(view) ? (
+              <div className="session-view-switch">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  spacing={0}
+                  value={view}
+                  onValueChange={(value) =>
+                    value && setView(value as SessionView)
+                  }
+                  aria-label="Session view"
+                >
+                  <ToggleGroupItem value="session">
+                    <MessageSquare data-icon="inline-start" />
+                    Conversation
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="review">
+                    <FileDiff data-icon="inline-start" />
+                    Changes<Badge variant="secondary">{files.length}</Badge>
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="tools">
+                    <SquareTerminal data-icon="inline-start" />
+                    Tools
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             ) : null}
-          </div>
-          <div>
-            {runner.selected ? (
-              <TaskBadge state={runner.selected.state} />
-            ) : (
-              <span>One workspace per session</span>
-            )}
-            <span className="statusbar-divider" />
-            <span>
-              {runner.conversation?.checkpointSaved
-                ? "Context saved"
-                : "Up to 30 min per reply"}
-            </span>
-          </div>
-        </footer>
+            <section className="surface-page" hidden={view !== "new"}>
+              {runner.connected ? (
+                <NewSessionDialog
+                  embedded
+                  runner={runner}
+                  open={view === "new"}
+                  onOpenChange={(open) => {
+                    if (!open)
+                      setView((previous) =>
+                        previous === "new" ? "session" : previous,
+                      );
+                  }}
+                  onStarting={() => {
+                    setDetailsVisible(false);
+                    setView("session");
+                    if (matchMedia("(max-width: 900px)").matches)
+                      setSidebarVisible(false);
+                  }}
+                />
+              ) : null}
+            </section>
+            <section className="surface-page" hidden={view !== "history"}>
+              <SessionHistory
+                key={runner.connected ? "authenticated" : "anonymous"}
+                runner={runner}
+                titles={titles}
+                onSelect={(id) => selectSession(id, true)}
+                openSession={() => setView("session")}
+                newSession={newSession}
+              />
+            </section>
+            <div className="surface-chat" hidden={view !== "session"}>
+              <AgentChat
+                key={runner.selected?.id || "new"}
+                runner={runner}
+                newSession={newSession}
+                drafts={drafts}
+                workspace={workspace}
+                showTools={() => setView("tools")}
+              />
+            </div>
+            <div className="surface-review" hidden={view !== "review"}>
+              <div className="review-files">
+                <FileExplorer workspace={workspace} onOpen={openSource} />
+              </div>
+              <Workspace
+                runner={runner}
+                files={files}
+                activePath={activePath}
+                setActivePath={setActivePath}
+                newSession={newSession}
+                publish={() => setPublishOpen(true)}
+                workspace={workspace}
+              />
+            </div>
+            <div className="surface-tools" hidden={view !== "tools"}>
+              <ActivityPanel
+                runner={runner}
+                expanded={true}
+                toggle={() => setView("session")}
+              />
+            </div>
+          </main>
+          <SessionDetails
+            runner={runner}
+            files={files}
+            title={title}
+            hidden={view === "new"}
+            openFile={openFile}
+            review={() => {
+              workspace.setMode("changes");
+              setDetailsVisible(false);
+              setView("review");
+            }}
+            browse={() => {
+              workspace.setMode("code");
+              setDetailsVisible(false);
+              setView("review");
+            }}
+            publish={() => setPublishOpen(true)}
+            conversation={() => {
+              setDetailsVisible(false);
+              setView("session");
+            }}
+            close={() => setDetailsVisible(false)}
+          />
+        </div>
         <AuthDialog runner={runner} />
         {runner.connected ? (
           <>
-            <NewSessionDialog
-              runner={runner}
-              open={newOpen}
-              onOpenChange={setNewOpen}
-              onStarting={() => setMobilePane("chat")}
-            />
             <SettingsDialog
               runner={runner}
               open={settingsOpen}

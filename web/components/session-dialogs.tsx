@@ -1,5 +1,12 @@
 import { AgentLogo } from "./agent-logo";
-import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   ArrowUpRight,
   Check,
@@ -26,7 +33,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -164,7 +170,9 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   onStarting,
+  embedded = false,
 }: {
+  embedded?: boolean;
   runner: Runner;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -193,7 +201,10 @@ export function NewSessionDialog({
         example ? null : runner.repository,
         ref.trim(),
         example,
-        () => { onOpenChange(false); onStarting(); },
+        () => {
+          onOpenChange(false);
+          onStarting();
+        },
       );
       setPrompt("");
       onOpenChange(false);
@@ -201,9 +212,13 @@ export function NewSessionDialog({
       setError(errorText(e));
     }
   }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+  const content = (
+    <>
+      {embedded ? (
+        <p className="new-session-intro">
+          Choose a repository, an agent, and a task.
+        </p>
+      ) : (
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cloud aria-hidden="true" />
@@ -214,126 +229,106 @@ export function NewSessionDialog({
             changes here.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel id="agent-choice">Agent</FieldLabel>
-              <ToggleGroup
-                type="single"
-                value={agent}
-                onValueChange={(value) => {
-                  if (value) setAgent(value as Agent);
-                }}
-                aria-labelledby="agent-choice"
-                variant="outline"
-                spacing={2}
-              >
-                <ToggleGroupItem value="pi" aria-label="Pi">
-                  <AgentLogo agent="pi" data-icon="inline-start" />
-                  Pi
-                  {agent === "pi" ? <Check data-icon="inline-end" aria-hidden="true" /> : null}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="opencode" aria-label="OpenCode">
-                  <AgentLogo agent="opencode" data-icon="inline-start" />
-                  OpenCode
-                  {agent === "opencode" ? <Check data-icon="inline-end" aria-hidden="true" /> : null}
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <FieldDescription role="status">Selected agent: {agentNames[agent]}</FieldDescription>
-            </Field>
-            {!runner.github?.connected && !example ? (
-              <Alert>
-                <Github />
-                <AlertDescription>
-                  Connect GitHub to choose your public and private repositories.
-                  <GitHubConnectButton runner={runner} />
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            {runner.github?.connected ? (
-              <>
-                <Field>
-                  <FieldLabel htmlFor="repo-search">
-                    Search repositories
-                  </FieldLabel>
-                  <InputGroup>
-                    <InputGroupInput
-                      id="repo-search"
-                      type="search"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search loaded repositories"
+      )}
+      <form onSubmit={submit} className="new-session-form">
+        <FieldGroup>
+          {!runner.github?.connected && !example ? (
+            <Alert>
+              <Github />
+              <AlertDescription>
+                Connect GitHub to choose your public and private repositories.
+                <GitHubConnectButton runner={runner} />
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {runner.github?.connected ? (
+            <>
+              <Field>
+                <FieldLabel htmlFor="repo-search">
+                  Search repositories
+                </FieldLabel>
+                <InputGroup>
+                  <InputGroupInput
+                    id="repo-search"
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search loaded repositories"
+                  />
+                  <InputGroupAddon>
+                    <Search aria-hidden="true" />
+                  </InputGroupAddon>
+                </InputGroup>
+              </Field>
+              <Field data-disabled={runner.catalogBusy && !options.length}>
+                <FieldLabel htmlFor="repo-select">
+                  <FolderGit2 aria-hidden="true" />
+                  Repository
+                </FieldLabel>
+                <Suspense
+                  fallback={
+                    <Skeleton
+                      className="h-8 w-full"
+                      aria-label="Loading repository selector"
+                      role="status"
                     />
-                    <InputGroupAddon>
-                      <Search aria-hidden="true" />
-                    </InputGroupAddon>
-                  </InputGroup>
-                </Field>
-                <Field data-disabled={runner.catalogBusy && !options.length}>
-                  <FieldLabel htmlFor="repo-select">
-                    <FolderGit2 aria-hidden="true" />
-                    Repository
-                  </FieldLabel>
-                  <Suspense fallback={<Skeleton className="h-8 w-full" aria-label="Loading repository selector" role="status" />}>
-                    <RepositorySelect
-                      selected={runner.repository}
-                      options={options}
-                      example={example}
-                      disabled={runner.catalogBusy && !options.length}
-                      onSelect={repo => {
-                        setExample(false);
-                        runner.chooseRepository(repo);
-                      }}
-                    />
-                  </Suspense>
-                  <FieldDescription>
-                    {runner.catalogBusy ? (
-                      <span
-                        className="inline-flex items-center gap-2"
-                        role="status"
-                      >
-                        <Spinner aria-hidden="true" />
-                        Loading repositories…{" "}
-                      </span>
-                    ) : null}
-                    Showing {runner.repositories.length} of{" "}
-                    {Math.max(
-                      runner.repositoryTotal,
-                      runner.repositories.length,
-                    )}{" "}
-                    repositories.
-                    {query
-                      ? ` ${options.length} matches among loaded repositories.`
-                      : ""}
-                  </FieldDescription>
-                  {runner.hasMore ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={runner.catalogBusy}
-                      onClick={() => void runner.loadMore()}
+                  }
+                >
+                  <RepositorySelect
+                    selected={runner.repository}
+                    options={options}
+                    example={example}
+                    disabled={runner.catalogBusy && !options.length}
+                    onSelect={(repo) => {
+                      setExample(false);
+                      runner.chooseRepository(repo);
+                    }}
+                  />
+                </Suspense>
+                <FieldDescription>
+                  {runner.catalogBusy ? (
+                    <span
+                      className="inline-flex items-center gap-2"
+                      role="status"
                     >
-                      {runner.catalogBusy ? (
-                        <Spinner data-icon="inline-start" aria-hidden="true" />
-                      ) : (
-                        <ChevronsDown data-icon="inline-start" />
-                      )}
-                      {runner.catalogBusy
-                        ? "Loading…"
-                        : "Load more repositories"}
-                    </Button>
+                      <Spinner aria-hidden="true" />
+                      Loading repositories…{" "}
+                    </span>
                   ) : null}
-                </Field>
-              </>
-            ) : null}
-            {example ? (
-              <Alert>
-                <Cloud />
-                <AlertDescription>
-                  Example repository: octocat/Hello-World.
-                </AlertDescription>
-              </Alert>
-            ) : null}
+                  Showing {runner.repositories.length} of{" "}
+                  {Math.max(runner.repositoryTotal, runner.repositories.length)}{" "}
+                  repositories.
+                  {query
+                    ? ` ${options.length} matches among loaded repositories.`
+                    : ""}
+                </FieldDescription>
+                {runner.hasMore ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={runner.catalogBusy}
+                    onClick={() => void runner.loadMore()}
+                  >
+                    {runner.catalogBusy ? (
+                      <Spinner data-icon="inline-start" aria-hidden="true" />
+                    ) : (
+                      <ChevronsDown data-icon="inline-start" />
+                    )}
+                    {runner.catalogBusy ? "Loading…" : "Load more repositories"}
+                  </Button>
+                ) : null}
+              </Field>
+            </>
+          ) : null}
+          {example ? (
+            <Alert>
+              <Cloud />
+              <AlertDescription>
+                Example repository: octocat/Hello-World.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="session-form-options">
             <Field>
               <FieldLabel htmlFor="repo-ref">
                 <GitBranch aria-hidden="true" />
@@ -350,62 +345,112 @@ export function NewSessionDialog({
                 }
               />
             </Field>
-            <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="task-prompt">
-                What would you like to do?
-              </FieldLabel>
-              <Textarea
-                id="task-prompt"
-                rows={5}
-                maxLength={32000}
-                required
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Describe the change, the expected result, and the checks to run…"
-              />
-              <FieldDescription>
-                {agentNames[agent]} will run with Qwen. Continue sending instructions in its chat.
+            <Field>
+              <FieldLabel id="agent-choice">Agent</FieldLabel>
+              <ToggleGroup
+                type="single"
+                value={agent}
+                onValueChange={(value) => {
+                  if (value) setAgent(value as Agent);
+                }}
+                aria-labelledby="agent-choice"
+                variant="outline"
+                spacing={2}
+              >
+                <ToggleGroupItem value="pi" aria-label="Pi">
+                  <AgentLogo agent="pi" data-icon="inline-start" />
+                  Pi
+                  {agent === "pi" ? (
+                    <Check data-icon="inline-end" aria-hidden="true" />
+                  ) : null}
+                </ToggleGroupItem>
+                <ToggleGroupItem value="opencode" aria-label="OpenCode">
+                  <AgentLogo agent="opencode" data-icon="inline-start" />
+                  OpenCode
+                  {agent === "opencode" ? (
+                    <Check data-icon="inline-end" aria-hidden="true" />
+                  ) : null}
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <FieldDescription role="status">
+                {agentNames[agent]} · Qwen 3.7 Flash
               </FieldDescription>
             </Field>
-            <FormError error={error} />
-            {runner.hasActiveRun && !runner.busy ? (
-              <Alert>
-                <AlertDescription>
-                  A task is running. Open it in Sessions to continue or stop it.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setExample(true);
-                  setPrompt(
-                    "Create NOTES.md with a repository summary. Verify that it exists. Do not commit.",
-                  );
-                }}
-              >
-                Use public example
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  runner.busy ||
-                  runner.hasActiveRun ||
-                  (!runner.repository && !example)
-                }
-              >
-                {runner.busy ? (
-                  <Spinner data-icon="inline-start" aria-hidden="true" />
-                ) : (
-                  <Play data-icon="inline-start" />
-                )}
-                {runner.busy ? "Preparing session…" : "Start work session"}
-              </Button>
-            </DialogFooter>
-          </FieldGroup>
-        </form>
+          </div>
+          <Field data-invalid={Boolean(error)}>
+            <FieldLabel htmlFor="task-prompt">
+              What would you like to do?
+            </FieldLabel>
+            <Textarea
+              id="task-prompt"
+              rows={5}
+              maxLength={32000}
+              required
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder="Describe the change, the expected result, and the checks to run…"
+            />
+            <FieldDescription>
+              Your session runs in an isolated cloud workspace. Continue with
+              the same agent and files in its chat.
+            </FieldDescription>
+          </Field>
+          <FormError error={error} />
+          {runner.hasActiveRun && !runner.busy ? (
+            <Alert>
+              <AlertDescription>
+                A task is running. Open it in Sessions to continue or stop it.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="session-form-actions">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setExample(true);
+                setPrompt(
+                  "Create NOTES.md with a repository summary. Verify that it exists. Do not commit.",
+                );
+              }}
+            >
+              Use public example
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                runner.busy ||
+                runner.hasActiveRun ||
+                (!runner.repository && !example)
+              }
+            >
+              {runner.busy ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <Play data-icon="inline-start" />
+              )}
+              {runner.busy ? "Preparing session…" : "Start session"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </FieldGroup>
+      </form>
+    </>
+  );
+  return embedded ? (
+    <div className="new-session-inline" hidden={!open}>
+      {content}
+    </div>
+  ) : (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+        {content}
       </DialogContent>
     </Dialog>
   );

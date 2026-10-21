@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
+const port = Number(process.env.PREVIEW_PORT || 8795);
 const slow = process.argv.includes("--slow");
 const slowStart = process.argv.includes("--slow-start");
 const failStart = process.argv.includes("--fail-start");
@@ -441,6 +442,6 @@ createServer(async (req, res) => {
           )
       : bytes,
   );
-}).listen(8795, "127.0.0.1", () =>
-  console.log("Simulated editor: http://127.0.0.1:8795/?task=pi-editor-demo"),
+}).listen(port, "127.0.0.1", () =>
+  console.log(`Simulated sessions: http://127.0.0.1:${port}/?task=pi-editor-demo`),
 );
