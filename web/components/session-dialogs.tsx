@@ -4,19 +4,18 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
 import {
   ArrowUpRight,
-  Check,
   Cloud,
   GitFork as Github,
   LockKeyhole,
-  Play,
+  ArrowUp,
   Unplug,
   Search,
-  GitBranch,
   FolderGit2,
   CircleAlert,
   ChevronsDown,
@@ -27,6 +26,8 @@ import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
+  InputGroupTextarea,
+  InputGroupButton,
 } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import {
@@ -165,34 +166,42 @@ export function AuthDialog({ runner }: { runner: Runner }) {
     </Dialog>
   );
 }
-export function NewSessionDialog({
+export function NewConversation({
   runner,
-  open,
-  onOpenChange,
+  active,
   onStarting,
-  embedded = false,
 }: {
-  embedded?: boolean;
   runner: Runner;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  active: boolean;
   onStarting: () => void;
 }) {
-  const [agent, setAgent] = useState<Agent>("pi"),
-    [query, setQuery] = useState(""),
-    [ref, setRef] = useState(""),
-    [prompt, setPrompt] = useState(""),
-    [error, setError] = useState(""),
-    [example, setExample] = useState(false);
+  const [agent, setAgent] = useState<Agent>("pi");
+  const [query, setQuery] = useState("");
+  const [ref, setRef] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [error, setError] = useState("");
+  const [example, setExample] = useState(false);
+  const [repositoryOpen, setRepositoryOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
   const options = useMemo(
     () =>
       runner.repositories.filter((repo) =>
-        repo.fullName.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+        repo.fullName.toLowerCase().includes(query.toLowerCase()),
       ),
     [runner.repositories, query],
   );
+  const canSend =
+    Boolean(prompt.trim()) &&
+    !runner.busy &&
+    !runner.hasActiveRun &&
+    Boolean(runner.repository || example);
+  useEffect(() => {
+    if (active) messageRef.current?.focus({ preventScroll: true });
+  }, [active]);
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!canSend) return;
     setError("");
     try {
       await runner.start(
@@ -201,258 +210,224 @@ export function NewSessionDialog({
         example ? null : runner.repository,
         ref.trim(),
         example,
-        () => {
-          onOpenChange(false);
-          onStarting();
-        },
+        onStarting,
       );
       setPrompt("");
-      onOpenChange(false);
-    } catch (e) {
-      setError(errorText(e));
+    } catch (error) {
+      setError(errorText(error));
     }
   }
-  const content = (
-    <>
-      {embedded ? (
-        <p className="new-session-intro">
-          Choose a repository, an agent, and a task.
-        </p>
-      ) : (
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Cloud aria-hidden="true" />
-            New cloud session
-          </DialogTitle>
-          <DialogDescription>
-            Choose a repository and a task. Chat with the agent and review its
-            changes here.
-          </DialogDescription>
-        </DialogHeader>
-      )}
-      <form onSubmit={submit} className="new-session-form">
+  const repositoryName = example
+    ? "octocat/Hello-World"
+    : runner.repository?.fullName || "Choose repository";
+  return (
+    <div className="new-conversation">
+      <div className="new-conversation-intro">
+        <h1>What would you like to work on?</h1>
+        <p>Your first message starts a new cloud session.</p>
+      </div>
+      <form ref={formRef} onSubmit={submit} className="first-message-form">
         <FieldGroup>
-          {!runner.github?.connected && !example ? (
-            <Alert>
-              <Github />
-              <AlertDescription>
-                Connect GitHub to choose your public and private repositories.
-                <GitHubConnectButton runner={runner} />
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {runner.github?.connected ? (
-            <>
-              <Field>
-                <FieldLabel htmlFor="repo-search">
-                  Search repositories
-                </FieldLabel>
-                <InputGroup>
-                  <InputGroupInput
-                    id="repo-search"
-                    type="search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search loaded repositories"
-                  />
-                  <InputGroupAddon>
-                    <Search aria-hidden="true" />
-                  </InputGroupAddon>
-                </InputGroup>
-              </Field>
-              <Field data-disabled={runner.catalogBusy && !options.length}>
-                <FieldLabel htmlFor="repo-select">
-                  <FolderGit2 aria-hidden="true" />
-                  Repository
-                </FieldLabel>
-                <Suspense
-                  fallback={
-                    <Skeleton
-                      className="h-8 w-full"
-                      aria-label="Loading repository selector"
-                      role="status"
-                    />
+          <Field data-invalid={Boolean(error)}>
+            <FieldLabel htmlFor="first-message" className="sr-only">
+              First message
+            </FieldLabel>
+            <InputGroup className="first-message-composer">
+              <InputGroupTextarea
+                ref={messageRef}
+                id="first-message"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                rows={3}
+                maxLength={32000}
+                disabled={runner.busy}
+                placeholder="Describe a change, ask a question, or plan your next task…"
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    if (canSend) formRef.current?.requestSubmit();
                   }
+                }}
+              />
+              <InputGroupAddon
+                align="block-end"
+                className="first-message-actions"
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="conversation-repository"
+                  onClick={() => setRepositoryOpen(true)}
+                  aria-label={`Repository: ${repositoryName}`}
+                  title={repositoryName}
                 >
-                  <RepositorySelect
-                    selected={runner.repository}
-                    options={options}
-                    example={example}
-                    disabled={runner.catalogBusy && !options.length}
-                    onSelect={(repo) => {
-                      setExample(false);
-                      runner.chooseRepository(repo);
-                    }}
-                  />
-                </Suspense>
-                <FieldDescription>
-                  {runner.catalogBusy ? (
-                    <span
-                      className="inline-flex items-center gap-2"
-                      role="status"
-                    >
-                      <Spinner aria-hidden="true" />
-                      Loading repositories…{" "}
-                    </span>
-                  ) : null}
-                  Showing {runner.repositories.length} of{" "}
-                  {Math.max(runner.repositoryTotal, runner.repositories.length)}{" "}
-                  repositories.
-                  {query
-                    ? ` ${options.length} matches among loaded repositories.`
-                    : ""}
-                </FieldDescription>
-                {runner.hasMore ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={runner.catalogBusy}
-                    onClick={() => void runner.loadMore()}
+                  <FolderGit2 data-icon="inline-start" />
+                  <span className="truncate">{repositoryName}</span>
+                </Button>
+                <ToggleGroup
+                  type="single"
+                  value={agent}
+                  onValueChange={(value) => value && setAgent(value as Agent)}
+                  aria-label="Coding agent"
+                  variant="outline"
+                  spacing={0}
+                >
+                  <ToggleGroupItem value="pi" aria-label="Pi">
+                    <AgentLogo agent="pi" data-icon="inline-start" />
+                    Pi
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="opencode" aria-label="OpenCode">
+                    <AgentLogo agent="opencode" data-icon="inline-start" />
+                    OpenCode
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <InputGroupButton
+                  type="submit"
+                  variant="default"
+                  size="icon-sm"
+                  disabled={!canSend}
+                  aria-label="Send first message"
+                  aria-busy={runner.busy}
+                >
+                  {runner.busy ? <Spinner aria-hidden="true" /> : <ArrowUp />}
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+          </Field>
+          <FormError error={error} />
+        </FieldGroup>
+      </form>
+      <p className="new-conversation-hint">
+        {runner.hasActiveRun
+          ? "A task is running. Open it in Overview to continue or stop it before sending."
+          : !runner.repository && !example
+            ? "Choose a repository before sending your first message."
+            : `${agentNames[agent]} · Qwen 3.7 Flash${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
+      </p>
+      <Dialog open={repositoryOpen} onOpenChange={setRepositoryOpen}>
+        <DialogContent className="conversation-repository-dialog max-h-[85dvh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Conversation repository</DialogTitle>
+            <DialogDescription>
+              Choose the codebase for your next conversation.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            {!runner.github?.connected ? (
+              <GitHubConnectButton runner={runner} />
+            ) : (
+              <>
+                <Field>
+                  <FieldLabel htmlFor="repo-search">
+                    Search repositories
+                  </FieldLabel>
+                  <InputGroup>
+                    <InputGroupInput
+                      id="repo-search"
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search loaded repositories"
+                    />
+                    <InputGroupAddon>
+                      <Search />
+                    </InputGroupAddon>
+                  </InputGroup>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="repo-select">Repository</FieldLabel>
+                  <Suspense
+                    fallback={
+                      <Skeleton
+                        className="h-8 w-full"
+                        aria-label="Loading repository selector"
+                        role="status"
+                      />
+                    }
                   >
-                    {runner.catalogBusy ? (
-                      <Spinner data-icon="inline-start" aria-hidden="true" />
-                    ) : (
-                      <ChevronsDown data-icon="inline-start" />
-                    )}
-                    {runner.catalogBusy ? "Loading…" : "Load more repositories"}
-                  </Button>
-                ) : null}
-              </Field>
-            </>
-          ) : null}
-          {example ? (
-            <Alert>
-              <Cloud />
-              <AlertDescription>
-                Example repository: octocat/Hello-World.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="session-form-options">
+                    <RepositorySelect
+                      selected={runner.repository}
+                      options={options}
+                      example={example}
+                      disabled={runner.catalogBusy && !options.length}
+                      onSelect={(repo) => {
+                        setExample(false);
+                        runner.chooseRepository(repo);
+                      }}
+                    />
+                  </Suspense>
+                  <FieldDescription>
+                    Showing {runner.repositories.length} of{" "}
+                    {Math.max(
+                      runner.repositoryTotal,
+                      runner.repositories.length,
+                    )}{" "}
+                    repositories.
+                    {query
+                      ? ` ${options.length} matches among loaded repositories.`
+                      : ""}
+                  </FieldDescription>
+                  {runner.hasMore ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={runner.catalogBusy}
+                      onClick={() => void runner.loadMore()}
+                    >
+                      {runner.catalogBusy ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <ChevronsDown data-icon="inline-start" />
+                      )}
+                      {runner.catalogBusy
+                        ? "Loading…"
+                        : "Load more repositories"}
+                    </Button>
+                  ) : null}
+                </Field>
+              </>
+            )}
             <Field>
               <FieldLabel htmlFor="repo-ref">
-                <GitBranch aria-hidden="true" />
                 Branch or tag{" "}
                 <span className="text-muted-foreground">optional</span>
               </FieldLabel>
               <Input
                 id="repo-ref"
-                maxLength={255}
                 value={ref}
+                maxLength={255}
                 onChange={(event) => setRef(event.target.value)}
                 placeholder={
                   runner.repository?.defaultBranch || "Default branch"
                 }
               />
             </Field>
-            <Field>
-              <FieldLabel id="agent-choice">Agent</FieldLabel>
-              <ToggleGroup
-                type="single"
-                value={agent}
-                onValueChange={(value) => {
-                  if (value) setAgent(value as Agent);
-                }}
-                aria-labelledby="agent-choice"
-                variant="outline"
-                spacing={2}
+            {example ? (
+              <p className="text-sm text-muted-foreground">
+                Using octocat/Hello-World.
+              </p>
+            ) : null}
+            <div className="repository-dialog-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setExample(true)}
               >
-                <ToggleGroupItem value="pi" aria-label="Pi">
-                  <AgentLogo agent="pi" data-icon="inline-start" />
-                  Pi
-                  {agent === "pi" ? (
-                    <Check data-icon="inline-end" aria-hidden="true" />
-                  ) : null}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="opencode" aria-label="OpenCode">
-                  <AgentLogo agent="opencode" data-icon="inline-start" />
-                  OpenCode
-                  {agent === "opencode" ? (
-                    <Check data-icon="inline-end" aria-hidden="true" />
-                  ) : null}
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <FieldDescription role="status">
-                {agentNames[agent]} · Qwen 3.7 Flash
-              </FieldDescription>
-            </Field>
-          </div>
-          <Field data-invalid={Boolean(error)}>
-            <FieldLabel htmlFor="task-prompt">
-              What would you like to do?
-            </FieldLabel>
-            <Textarea
-              id="task-prompt"
-              rows={5}
-              maxLength={32000}
-              required
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Describe the change, the expected result, and the checks to run…"
-            />
-            <FieldDescription>
-              Your session runs in an isolated cloud workspace. Continue with
-              the same agent and files in its chat.
-            </FieldDescription>
-          </Field>
-          <FormError error={error} />
-          {runner.hasActiveRun && !runner.busy ? (
-            <Alert>
-              <AlertDescription>
-                A task is running. Open it in Sessions to continue or stop it.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="session-form-actions">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setExample(true);
-                setPrompt(
-                  "Create NOTES.md with a repository summary. Verify that it exists. Do not commit.",
-                );
-              }}
-            >
-              Use public example
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                runner.busy ||
-                runner.hasActiveRun ||
-                (!runner.repository && !example)
-              }
-            >
-              {runner.busy ? (
-                <Spinner data-icon="inline-start" aria-hidden="true" />
-              ) : (
-                <Play data-icon="inline-start" />
-              )}
-              {runner.busy ? "Preparing session…" : "Start session"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </FieldGroup>
-      </form>
-    </>
-  );
-  return embedded ? (
-    <div className="new-session-inline" hidden={!open}>
-      {content}
+                Use public example
+              </Button>
+              <Button type="button" onClick={() => setRepositoryOpen(false)}>
+                Done
+              </Button>
+            </div>
+          </FieldGroup>
+        </DialogContent>
+      </Dialog>
     </div>
-  ) : (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-        {content}
-      </DialogContent>
-    </Dialog>
   );
 }
 export function SettingsDialog({
