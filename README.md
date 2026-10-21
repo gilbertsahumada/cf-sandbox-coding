@@ -287,3 +287,5 @@ The layout uses compact 12px conversation text, smaller supporting labels, round
 Verification uses the local simulated preview for the new-session flow, delayed preparation, cancellation, reply drafts, history search, contextual file editing/saving, and responsive navigation. No real Cloudflare agent or model invocation is performed for this redesign. Run a separate delayed fixture with `PREVIEW_PORT=8797 node scripts/preview-editor.mjs --slow --slow-start`.
 
 Los selectores del nuevo chat están integrados en el composer: el menú del agente muestra Pi/OpenCode y el modelo, y el menú del repositorio permite buscar entre los repositorios cargados, cargar más, elegir una rama o usar el ejemplo público. Cambiar estas opciones conserva el mensaje y no inicia una sesión hasta enviarlo.
+
+After a turn finishes, the chat shows a change summary with **Review changes** and **Create PR**. Publication opens the review form; an existing proposal offers **View PR**. Creation is blocked while the agent runs, when file edits are unsaved, or when publication requirements are not met.
