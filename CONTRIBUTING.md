@@ -38,7 +38,7 @@ GitHub Actions verifies commits and pull requests without exposure of model or C
 npm install           # Install dependencies.
 npm run format        # Apply the shared formatter.
 npm run format:check  # Check formatting without changing files.
-npm run check         # Type-check the Worker and UI.
+npm run check         # Compile/type-check container helpers, Worker and UI.
 npm test              # Run the automated test suite.
 npm run build         # Build the web interface.
 ```

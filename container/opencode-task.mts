@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { openCodeEvents } from "./opencode-events.mjs";
+import { openCodeEvents, type OpenCodeEvent } from "./opencode-events.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
@@ -33,18 +33,22 @@ const server = spawn(
 );
 server.stdout.on("data", (chunk) => process.stderr.write(chunk));
 server.stderr.on("data", (chunk) => process.stderr.write(chunk));
-let spawnError;
+let spawnError: Error | undefined;
 server.on("error", (error) => {
   spawnError = error;
 });
 const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`;
-/**
- * Local authenticated control channel; model credentials are injected only by the Worker.
- * @param {string} path
- * @param {unknown} [body]
- * @param {number} [timeout]
- */
-async function request(path, body, timeout = openCodeServer.messageTimeoutMs) {
+type Session = { id: string };
+type MessageResult = {
+  info?: { error?: { name?: string; data?: { message?: string } } };
+  parts?: { type: string; text?: string }[];
+};
+// Local authenticated control channel; model credentials are injected only by the Worker.
+async function request<T = unknown>(
+  path: string,
+  body?: unknown,
+  timeout = openCodeServer.messageTimeoutMs,
+) {
   const url = new URL(path, serverOrigin);
   url.searchParams.set("directory", process.cwd());
   const response = await fetch(url, {
@@ -57,10 +61,10 @@ async function request(path, body, timeout = openCodeServer.messageTimeoutMs) {
     throw new Error(
       `OpenCode API ${response.status}: ${(await response.text()).slice(-2000)}`,
     );
-  return response.json();
+  return response.json() as Promise<T>;
 }
 const eventsController = new AbortController();
-async function followEvents(sessionID, onReady) {
+async function followEvents(sessionID: string, onReady: () => void) {
   const url = new URL("/event", serverOrigin);
   url.searchParams.set("directory", process.cwd());
   const response = await fetch(url, {
@@ -83,7 +87,7 @@ async function followEvents(sessionID, onReady) {
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trimStart())
         .join("\n");
-      let event;
+      let event: OpenCodeEvent;
       try {
         event = JSON.parse(data);
       } catch {
@@ -118,15 +122,16 @@ try {
   const sessionFile =
     process.env.OPENCODE_SESSION_FILE ||
     "/workspace/conversation/opencode-session.json";
-  let session;
+  let session: Session;
   try {
     const saved = JSON.parse(await readFile(sessionFile, "utf8"));
     if (!/^ses_[a-zA-Z0-9]+$/.test(saved.id))
       throw Error("Invalid saved OpenCode session");
-    session = await request(`/session/${saved.id}`);
-  } catch (error) {
+    session = await request<Session>(`/session/${saved.id}`);
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
     if (error.code !== "ENOENT") throw error;
-    session = await request("/session", {
+    session = await request<Session>("/session", {
       permission: [
         { permission: "*", pattern: "*", action: "allow" },
         ...["question", "plan_enter", "plan_exit"].map((permission) => ({
@@ -143,12 +148,13 @@ try {
       mode: 0o600,
     });
   }
-  let markReady, failReady;
-  const subscribed = new Promise((resolve, reject) => {
+  let markReady!: () => void;
+  let failReady!: (reason: unknown) => void;
+  const subscribed = new Promise<void>((resolve, reject) => {
     markReady = resolve;
     failReady = reject;
   });
-  const events = followEvents(session.id, markReady).catch((error) => {
+  void followEvents(session.id, markReady).catch((error) => {
     failReady(error);
     if (error.name !== "AbortError")
       console.error("Live events unavailable:", error.message);
@@ -163,10 +169,13 @@ try {
     clearTimeout(subscriptionTimeout);
   }
   // The awaited message response is the completion boundary, before server shutdown.
-  const result = await request(`/session/${session.id}/message`, {
-    model: { providerID: "custom", modelID },
-    parts: [{ type: "text", text: prompt }],
-  });
+  const result = await request<MessageResult>(
+    `/session/${session.id}/message`,
+    {
+      model: { providerID: "custom", modelID },
+      parts: [{ type: "text", text: prompt }],
+    },
+  );
   if (result.info?.error)
     throw new Error(
       result.info.error.data?.message ??
@@ -180,7 +189,8 @@ try {
     .map((part) => part.text ?? "")
     .join("\n");
   console.log(JSON.stringify({ type: "text", part: { text } }));
-} catch (error) {
+} catch (caught) {
+  const error = caught as NodeJS.ErrnoException & { status?: number };
   exitCode = 1;
   console.log(
     JSON.stringify({

@@ -6,17 +6,18 @@
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "types": "wrangler types",
-    "check": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
-    "test": "node --import tsx --test test/*.test.ts",
+    "check": "npm run build:container && tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "test": "npm run build:container && node --import tsx --test test/*.test.ts",
     "task": "node scripts/run-task.mjs",
     "configure": "node scripts/configure.mjs",
     "verify:live": "node scripts/verify-live.mjs",
     "verify:sse": "node scripts/verify-sse.mjs",
-    "build": "vite build",
+    "build": "npm run build:container && vite build",
     "dev:ui": "vite",
     "preview:editor": "npm run build && node scripts/preview-editor.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:container": "node scripts/build-container.mjs"
   },
   "dependencies": {
     "@cloudflare/sandbox": "1.0.1",

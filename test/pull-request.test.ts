@@ -20,7 +20,7 @@ import {
   type Proposal,
 } from "../src/pull-request";
 // @ts-expect-error The exporter runs as a standalone container module.
-import { exportChanges } from "../container/export-changes.mjs";
+import { exportChanges } from "../dist/container/export-changes.mjs";
 const blob = (path = "file.txt", bytes = Buffer.from("changed")) => ({
   path,
   mode: "100644" as const,

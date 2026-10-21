@@ -67,3 +67,11 @@ For a new agent, start with the validated agent contract, provider/command adapt
 Use literal unions or inferred schema types for finite states and external inputs. Share a constant only when several consumers represent the same policy; keep local presentation values near their component. Do not turn unrelated strings or numbers into a global constants bag. Document the reason behind retry, storage, and security behavior where it is enforced.
 
 See [OPERATIONS.md](OPERATIONS.md) for runtime limits and verification levels before reporting a change as tested.
+
+## Container TypeScript build
+
+Container sources are `container/*.mts` (TypeScript with explicit ESM output). `npm run build:container` checks them with the independent strict Node configuration and emits dependency-free `.mjs` helpers into ignored `dist/container/`. Existing `/opt/*.mjs` command paths, helper imports, serialized events, checkpoints and exit behavior stay unchanged.
+
+The Dockerfile compiles these sources in a separate build stage using locked development dependencies. The final image copies only emitted `.mjs` helpers; no TypeScript runtime or project dependency tree is copied into `/opt`. The image still installs the same pinned Pi/OpenCode CLIs.
+
+The build also creates `dist/container/workspace-files.mjs.txt` from the compiled file helper. The Worker embeds that generated text and installs it in existing containers before editor access. Do not maintain or commit a second source copy. `check`, `test`, and `build` generate these artifacts automatically, and the helper tests import the emitted JavaScript rather than bypassing compilation. Run `npm run build:container` before invoking Wrangler directly from a fresh checkout.

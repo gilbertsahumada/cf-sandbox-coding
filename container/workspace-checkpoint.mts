@@ -39,7 +39,7 @@ export function saveCheckpoint(root = "/workspace") {
     rmSync(temp, { recursive: true, force: true });
   }
 }
-export function restoreCheckpoint(encodedFile, root = "/workspace") {
+export function restoreCheckpoint(encodedFile: string, root = "/workspace") {
   const bytes = Buffer.from(readFileSync(encodedFile, "utf8"), "base64");
   if (bytes.length > checkpointLimit) throw Error("Checkpoint too large");
   const temp = mkdtempSync(join(tmpdir(), "checkpoint-"));
@@ -79,7 +79,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (process.argv[2] === "save") process.stdout.write(saveCheckpoint());
     else if (process.argv[2] === "restore") restoreCheckpoint(process.argv[3]);
     else throw Error("Invalid checkpoint command");
-  } catch (error) {
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
     process.stderr.write(error.message);
     process.exitCode = 1;
   }
