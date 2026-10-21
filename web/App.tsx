@@ -87,7 +87,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AuthDialog,
-  NewSessionDialog,
+  NewConversation,
   PublishDialog,
   SettingsDialog,
 } from "@/components/session-dialogs";
@@ -687,7 +687,7 @@ function AgentChat({
             {!runner.selected ? (
               <EmptyContent>
                 <Button variant="ghost" onClick={newSession}>
-                  Start a session
+                  New chat
                   <ChevronRight data-icon="inline-end" />
                 </Button>
               </EmptyContent>
@@ -838,7 +838,9 @@ export default function App() {
   const workspace = useWorkspace(runner);
   const drafts = useRef<Record<string, string>>({});
   const [titles, setTitles] = useState<Record<string, string>>({});
-  const [view, setView] = useState<SessionView>("session");
+  const [view, setView] = useState<SessionView>(() =>
+    new URL(location.href).searchParams.get("new") === "1" ? "new" : "session",
+  );
   const [sidebarVisible, setSidebarVisible] = useState(
     () =>
       !matchMedia("(max-width: 900px)").matches ||
@@ -883,9 +885,9 @@ export default function App() {
     if (!runner.connected) {
       drafts.current = {};
       setTitles({});
-      setView("session");
+      if (!runner.checking) setView("session");
     }
-  }, [runner.connected]);
+  }, [runner.connected, runner.checking]);
   const newSession = () => {
     if (!runner.connected) runner.setAuthOpen(true);
     else {
@@ -934,6 +936,21 @@ export default function App() {
     void workspace.open(path);
     setView("review");
   }
+  const showingNewConversation =
+    runner.connected &&
+    (view === "new" || (view === "session" && !runner.selected));
+  useEffect(() => {
+    if (runner.checking) return;
+    const url = new URL(location.href);
+    if (showingNewConversation) {
+      url.searchParams.set("new", "1");
+      url.searchParams.delete("task");
+    } else {
+      url.searchParams.delete("new");
+      if (runner.selected) url.searchParams.set("task", runner.selected.id);
+    }
+    window.history.replaceState(null, "", url);
+  }, [showingNewConversation, runner.checking, runner.selected?.id]);
   const title = runner.selected
     ? sessionTitle(runner.selected, titles)
     : "Your cloud workspace";
@@ -994,7 +1011,7 @@ export default function App() {
           className="session-layout"
           data-sidebar={sidebarVisible}
           data-details={detailsVisible}
-          data-view={view}
+          data-view={showingNewConversation ? "new" : view}
         >
           <nav className="activity-rail" aria-label="Workspace navigation">
             <IconButton
@@ -1061,7 +1078,7 @@ export default function App() {
             />
           </div>
           <main className="session-surface" aria-label="Session workspace">
-            <header className="session-toolbar">
+            <header className="session-toolbar" hidden={showingNewConversation}>
               <div className="session-heading-copy">
                 <span className="view-breadcrumb">
                   Overview <ChevronRight />{" "}
@@ -1149,18 +1166,14 @@ export default function App() {
                 </ToggleGroup>
               </div>
             ) : null}
-            <section className="surface-page" hidden={view !== "new"}>
+            <section
+              className="surface-page new-conversation-page"
+              hidden={!showingNewConversation}
+            >
               {runner.connected ? (
-                <NewSessionDialog
-                  embedded
+                <NewConversation
                   runner={runner}
-                  open={view === "new"}
-                  onOpenChange={(open) => {
-                    if (!open)
-                      setView((previous) =>
-                        previous === "new" ? "session" : previous,
-                      );
-                  }}
+                  active={showingNewConversation}
                   onStarting={() => {
                     setDetailsVisible(false);
                     setView("session");
@@ -1180,7 +1193,10 @@ export default function App() {
                 newSession={newSession}
               />
             </section>
-            <div className="surface-chat" hidden={view !== "session"}>
+            <div
+              className="surface-chat"
+              hidden={view !== "session" || showingNewConversation}
+            >
               <AgentChat
                 key={runner.selected?.id || "new"}
                 runner={runner}
@@ -1216,7 +1232,7 @@ export default function App() {
             runner={runner}
             files={files}
             title={title}
-            hidden={view === "new"}
+            hidden={showingNewConversation}
             openFile={openFile}
             review={() => {
               workspace.setMode("changes");

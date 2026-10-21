@@ -80,7 +80,7 @@ export function SessionNavigation({
           aria-current={view === "new" ? "page" : undefined}
         >
           <Plus data-icon="inline-start" />
-          New session
+          New chat
         </Button>
         <InputGroup>
           <InputGroupInput
@@ -227,7 +227,7 @@ export function SessionHistory({
         </p>
         <Button variant="outline" size="sm" onClick={newSession}>
           <Plus data-icon="inline-start" />
-          New session
+          New chat
         </Button>
       </div>
       <div className="history-filters">

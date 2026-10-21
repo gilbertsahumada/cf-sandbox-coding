@@ -79,3 +79,20 @@ Typography: unchanged IBM Plex Sans/Mono and compact scale. Layout/radii: unchan
 No actionable P0/P1/P2 findings in the graphite comparison. The final preview had no browser warnings/errors. Type checks, 71 tests and build passed; no real agent was started.
 
 Graphite final result: passed
+
+## First-message conversation iteration
+
+The user's next instruction replaces the separate launch form with a ChatGPT/Codex-style empty conversation. This explicitly supersedes the earlier new-session form reference; the selected graphite surfaces, compact type and rounded neutral controls remain the visual system. Source truth: that instruction and the selected first graphite image above. Implementation evidence: `verification/new-conversation-chat.png` (1440×1024 desktop) and `verification/new-conversation-mobile.png` (390×844 phone). This is a new empty-conversation state, so its content is intentionally different from the earlier running-session reference.
+
+The center now contains one heading and a rounded message composer, repository trigger, Pi/OpenCode controls and Send arrow. The setup form and duplicated session header are removed. Optional repository/branch configuration is disclosed in an accessible dialog. Focus uses a single neutral outline. Typography/assets/palette remain unchanged except the empty-state heading and 13px message input appropriate for the new conversational surface. No colored side stripes, new imagery or decorative content were added.
+
+Browser verification with simulated APIs:
+- New chat, typing, Shift+Enter and changing agent kept the existing task ID and session count unchanged.
+- Enter sent the first message once, created one OpenCode session, and displayed the initial prompt in the session conversation.
+- The Send arrow created one Pi session from `?new=1`, replacing it with `?task=...`.
+- Repository configuration retained the draft and applied the optional branch.
+- A subsequent New chat showed an empty composer and disabled Send.
+- Direct new-chat links reopen the correct surface. The phone composer has no horizontal document overflow; repository, agent and Send controls remain visible.
+- Browser console had no warnings or errors. No real model/Cloudflare task was executed.
+
+No actionable P0/P1/P2 findings remain. First-message final result: passed.
