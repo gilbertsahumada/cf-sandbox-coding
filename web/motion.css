@@ -1,0 +1,183 @@
+.session-pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.session-pages
+  > :is(.surface-page, .surface-chat, .surface-review, .surface-tools) {
+  position: absolute;
+  inset: 0;
+}
+.session-pages > [hidden] {
+  pointer-events: none;
+}
+
+:root {
+  --motion-fast: 160ms;
+  --motion-panel: 260ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Visibility waits for the exit; inert removes hidden controls from interaction immediately. */
+.navigation-surface,
+.session-details {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-panel) var(--motion-ease),
+    visibility 0s;
+}
+.session-layout[data-sidebar="false"] .navigation-surface,
+.session-details[data-hidden="true"] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: 0s, 0s, var(--motion-panel);
+}
+.session-layout[data-sidebar="false"] .navigation-surface {
+  transform: translateX(-18px);
+}
+.session-details[data-hidden="true"] {
+  transform: translateX(18px);
+}
+.activity-panel {
+  transition: flex-basis var(--motion-panel) var(--motion-ease);
+}
+.activity-scroll {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-panel) var(--motion-ease);
+}
+.activity-scroll[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+/* Radix keeps overlays mounted until their exit animation completes. */
+[data-slot="popover-content"],
+[data-slot="select-content"],
+[data-slot="tooltip-content"],
+[data-slot="dialog-content"],
+[data-slot="dialog-overlay"] {
+  animation-duration: var(--motion-fast);
+  animation-timing-function: var(--motion-ease);
+}
+[data-slot="popover-content"][data-state="open"],
+[data-slot="select-content"][data-state="open"],
+[data-slot="tooltip-content"]:is(
+  [data-state="instant-open"],
+  [data-state="delayed-open"]
+) {
+  animation-name: menu-reveal;
+}
+[data-slot="popover-content"][data-state="closed"],
+[data-slot="select-content"][data-state="closed"],
+[data-slot="tooltip-content"][data-state="closed"] {
+  animation-name: menu-dismiss;
+}
+[data-slot="dialog-content"][data-state="open"] {
+  animation-name: dialog-reveal;
+  animation-duration: var(--motion-panel);
+}
+[data-slot="dialog-content"][data-state="closed"] {
+  animation-name: dialog-dismiss;
+}
+@keyframes menu-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes menu-dismiss {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes dialog-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes dialog-dismiss {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (max-width: 900px) {
+  .session-layout {
+    overflow: hidden;
+  }
+  .session-layout[data-sidebar="false"] .navigation-surface {
+    transform: translateX(-100%);
+  }
+  .session-details[data-hidden="true"] {
+    transform: translateX(100%);
+  }
+}
+
+/* Progressive enhancement: preserve mounted chat/editor state through view changes. */
+@supports (transition-behavior: allow-discrete) {
+  .surface-chat,
+  .surface-review,
+  .surface-tools,
+  .surface-page {
+    opacity: 1;
+    translate: 0 0;
+    transition:
+      opacity var(--motion-fast) ease,
+      translate var(--motion-fast) var(--motion-ease),
+      display var(--motion-fast) allow-discrete;
+  }
+  .surface-chat[hidden],
+  .surface-review[hidden],
+  .surface-tools[hidden],
+  .surface-page[hidden] {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  @starting-style {
+    .surface-chat,
+    .surface-review,
+    .surface-tools,
+    .surface-page {
+      opacity: 0;
+      translate: 0 6px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-panel: 0ms;
+  }
+  .navigation-surface,
+  .session-details {
+    transition-delay: 0s;
+  }
+}

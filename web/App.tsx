@@ -271,7 +271,8 @@ function ActivityPanel({
           <CollapsibleContent
             forceMount
             className="activity-scroll"
-            hidden={!expanded}
+            inert={!expanded}
+            aria-hidden={!expanded}
           >
             <TabsContent
               value="tools"
@@ -911,6 +912,9 @@ export default function App() {
   const [view, setView] = useState<SessionView>(() =>
     new URL(location.href).searchParams.get("new") === "1" ? "new" : "session",
   );
+  const [compactLayout, setCompactLayout] = useState(
+    () => matchMedia("(max-width: 900px)").matches,
+  );
   const [sidebarVisible, setSidebarVisible] = useState(
     () =>
       !matchMedia("(max-width: 900px)").matches ||
@@ -922,6 +926,7 @@ export default function App() {
   useEffect(() => {
     const query = matchMedia("(max-width: 900px)");
     const compact = () => {
+      setCompactLayout(query.matches);
       if (query.matches) {
         setSidebarVisible(false);
         setDetailsVisible(false);
@@ -1128,7 +1133,11 @@ export default function App() {
               }
             />
           </nav>
-          <div className="navigation-surface">
+          <div
+            className="navigation-surface"
+            inert={!sidebarVisible}
+            aria-hidden={!sidebarVisible}
+          >
             <SessionNavigation
               key={runner.connected ? "authenticated" : "anonymous"}
               runner={runner}
@@ -1149,7 +1158,12 @@ export default function App() {
               close={() => setSidebarVisible(false)}
             />
           </div>
-          <main className="session-surface" aria-label="Session workspace">
+          <main
+            className="session-surface"
+            aria-label="Session workspace"
+            inert={compactLayout && (sidebarVisible || detailsVisible)}
+            aria-hidden={compactLayout && (sidebarVisible || detailsVisible)}
+          >
             <header className="session-toolbar" hidden={showingNewConversation}>
               <div className="session-heading-copy">
                 <span className="view-breadcrumb">
@@ -1214,7 +1228,11 @@ export default function App() {
                     icon={CircleHelp}
                     label="Session details"
                     pressed={detailsVisible}
-                    onClick={() => setDetailsVisible((value) => !value)}
+                    onClick={() => {
+                      if (matchMedia("(max-width: 900px)").matches)
+                        setSidebarVisible(false);
+                      setDetailsVisible((value) => !value);
+                    }}
                   />
                 ) : null}
               </div>
@@ -1246,80 +1264,96 @@ export default function App() {
                 </ToggleGroup>
               </div>
             ) : null}
-            <section
-              className="surface-page new-conversation-page"
-              hidden={!showingNewConversation}
-            >
-              {runner.connected ? (
-                <NewConversation
+            <div className="session-pages">
+              <section
+                className="surface-page new-conversation-page"
+                hidden={!showingNewConversation}
+                inert={!showingNewConversation}
+              >
+                {runner.connected ? (
+                  <NewConversation
+                    runner={runner}
+                    active={showingNewConversation}
+                    onStarting={() => {
+                      setDetailsVisible(false);
+                      setView("session");
+                      if (matchMedia("(max-width: 900px)").matches)
+                        setSidebarVisible(false);
+                    }}
+                  />
+                ) : null}
+              </section>
+              <section
+                className="surface-page"
+                hidden={view !== "history"}
+                inert={view !== "history"}
+              >
+                <SessionHistory
+                  key={runner.connected ? "authenticated" : "anonymous"}
                   runner={runner}
-                  active={showingNewConversation}
-                  onStarting={() => {
-                    setDetailsVisible(false);
-                    setView("session");
-                    if (matchMedia("(max-width: 900px)").matches)
-                      setSidebarVisible(false);
-                  }}
+                  titles={titles}
+                  onSelect={(id) => selectSession(id, true)}
+                  openSession={() => setView("session")}
+                  newSession={newSession}
                 />
-              ) : null}
-            </section>
-            <section className="surface-page" hidden={view !== "history"}>
-              <SessionHistory
-                key={runner.connected ? "authenticated" : "anonymous"}
-                runner={runner}
-                titles={titles}
-                onSelect={(id) => selectSession(id, true)}
-                openSession={() => setView("session")}
-                newSession={newSession}
-              />
-            </section>
-            <div
-              className="surface-chat"
-              hidden={view !== "session" || showingNewConversation}
-            >
-              <AgentChat
-                key={runner.selected?.id || "new"}
-                runner={runner}
-                newSession={newSession}
-                drafts={drafts}
-                workspace={workspace}
-                showTools={() => setView("tools")}
-                files={files}
-                review={() => {
-                  workspace.setMode("changes");
-                  setDetailsVisible(false);
-                  setView("review");
-                }}
-                publish={() => setPublishOpen(true)}
-              />
-            </div>
-            <div className="surface-review" hidden={view !== "review"}>
-              <div className="review-files">
-                <FileExplorer workspace={workspace} onOpen={openSource} />
+              </section>
+              <div
+                className="surface-chat"
+                hidden={view !== "session" || showingNewConversation}
+                inert={view !== "session" || showingNewConversation}
+              >
+                <AgentChat
+                  key={runner.selected?.id || "new"}
+                  runner={runner}
+                  newSession={newSession}
+                  drafts={drafts}
+                  workspace={workspace}
+                  showTools={() => setView("tools")}
+                  files={files}
+                  review={() => {
+                    workspace.setMode("changes");
+                    setDetailsVisible(false);
+                    setView("review");
+                  }}
+                  publish={() => setPublishOpen(true)}
+                />
               </div>
-              <Workspace
-                runner={runner}
-                files={files}
-                activePath={activePath}
-                setActivePath={setActivePath}
-                newSession={newSession}
-                publish={() => setPublishOpen(true)}
-                workspace={workspace}
-              />
-            </div>
-            <div className="surface-tools" hidden={view !== "tools"}>
-              <ActivityPanel
-                runner={runner}
-                expanded={true}
-                toggle={() => setView("session")}
-              />
+              <div
+                className="surface-review"
+                hidden={view !== "review"}
+                inert={view !== "review"}
+              >
+                <div className="review-files">
+                  <FileExplorer workspace={workspace} onOpen={openSource} />
+                </div>
+                <Workspace
+                  runner={runner}
+                  files={files}
+                  activePath={activePath}
+                  setActivePath={setActivePath}
+                  newSession={newSession}
+                  publish={() => setPublishOpen(true)}
+                  workspace={workspace}
+                />
+              </div>
+              <div
+                className="surface-tools"
+                hidden={view !== "tools"}
+                inert={view !== "tools"}
+              >
+                <ActivityPanel
+                  runner={runner}
+                  expanded={true}
+                  toggle={() => setView("session")}
+                />
+              </div>
             </div>
           </main>
           <SessionDetails
             runner={runner}
             files={files}
             title={title}
-            hidden={showingNewConversation}
+            hidden={showingNewConversation || !detailsVisible}
             openFile={openFile}
             review={() => {
               workspace.setMode("changes");

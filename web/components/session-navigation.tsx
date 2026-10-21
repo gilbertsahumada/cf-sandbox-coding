@@ -570,7 +570,9 @@ export function SessionDetails({
   return (
     <aside
       className="session-details"
-      hidden={hidden}
+      data-hidden={hidden}
+      inert={hidden}
+      aria-hidden={hidden}
       aria-label="Session details"
     >
       <div className="navigation-heading">

@@ -12,7 +12,7 @@ Owner access remains single-operator: owner sessions and the internal API token 
 4. Continue in the same chat after each reply. **Tools** shows live activity; **Changes** opens the cumulative diff, repository explorer, and editor.
 5. Review the changes and use **Create PR** to publish a draft, or download the patch. Publication is explicit; agents do not merge or deploy changes.
 
-Changing selectors or opening a new chat does not start an agent. Repository search filters the loaded catalog; **Load more** retrieves additional entries. The selected repository is remembered on the server after access validation.
+Overview and session details slide open and closed, with short transitions for views, menus, and dialogs. Hidden panels cannot receive keyboard input, and system reduced-motion preferences disable these effects. Changing selectors or opening a new chat does not start an agent. Repository search filters the loaded catalog; **Load more** retrieves additional entries. The selected repository is remembered on the server after access validation.
 
 A `/?task=ID` link reopens a known task after authentication; `/?new=1` opens an empty chat. Overview tracks sessions known to the current browser, not an account-wide server list. Browser history keeps the 12 most recent sessions plus running or unverified sessions so starting more work does not lose their references. Closing a tab or signing out does **not** stop running work: use **Stop**. Each session also offers **Delete session** with a confirmation dialog. **Delete permanently** stops the workspace and erases its saved cloud data. Published GitHub PRs remain unchanged.
 

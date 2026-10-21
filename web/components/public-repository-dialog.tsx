@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { CircleAlert } from "lucide-react";
 import {
   publicRepositoryUrl,
@@ -18,16 +18,24 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
 
 export function PublicRepositoryDialog({
+  open,
   initialUrl,
   onCancel,
   onConfirm,
 }: {
+  open: boolean;
   initialUrl: string;
   onCancel: () => void;
   onConfirm: (repository: PublicRepository) => void;
 }) {
   const [url, setUrl] = useState(initialUrl);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (open) {
+      setUrl(initialUrl);
+      setError("");
+    }
+  }, [open, initialUrl]);
   function submit(event: FormEvent) {
     event.preventDefault();
     const repository = publicRepositoryUrl(url);
@@ -41,7 +49,7 @@ export function PublicRepositoryDialog({
   }
   return (
     <Dialog
-      open
+      open={open}
       onOpenChange={(open) => {
         if (!open) onCancel();
       }}
