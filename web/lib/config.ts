@@ -5,6 +5,10 @@ export const workspaceConfig = {
     fullName: "octocat/Hello-World",
     url: "https://github.com/octocat/Hello-World",
   },
+  demoRepository: {
+    fullName: "gilbertsahumada/cf-sandbox-coding",
+    url: "https://github.com/gilbertsahumada/cf-sandbox-coding",
+  },
   maxPromptLength: 32_000,
   maxOpenDocuments: 20,
 } as const;

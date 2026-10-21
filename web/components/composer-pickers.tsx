@@ -68,6 +68,68 @@ export function AgentPicker({
   );
 }
 
+export type DemoRepositoryChoice = "project" | "custom";
+
+export function DemoRepositoryPicker({
+  value,
+  onChange,
+  disabled,
+  customName,
+}: {
+  value: DemoRepositoryChoice;
+  onChange: (value: DemoRepositoryChoice | "add") => void;
+  disabled: boolean;
+  customName?: string;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(value) => onChange(value as DemoRepositoryChoice | "add")}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        size="sm"
+        className="composer-picker-trigger composer-repository-trigger"
+        aria-label="Demo repository"
+      >
+        <SelectValue>
+          <FolderGit2 aria-hidden="true" />
+          <span className="truncate">
+            {value === "project"
+              ? "cf-sandbox-coding"
+              : customName?.split("/").at(-1) || "Other public repository"}
+          </span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent position="popper" side="top" align="start">
+        <SelectGroup>
+          <SelectLabel>Public repository</SelectLabel>
+          <SelectItem
+            value="project"
+            textValue={workspaceConfig.demoRepository.fullName}
+          >
+            <FolderGit2 aria-hidden="true" />
+            <span className="composer-agent-option">
+              <strong>cf-sandbox-coding</strong>
+              <small>Default · {workspaceConfig.demoRepository.fullName}</small>
+            </span>
+          </SelectItem>
+          {customName ? (
+            <SelectItem value="custom" textValue={customName}>
+              <Globe aria-hidden="true" />
+              <span>{customName}</span>
+            </SelectItem>
+          ) : null}
+          <SelectItem value="add">
+            <Globe aria-hidden="true" />
+            <span>Use another public repository</span>
+          </SelectItem>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function RepositoryPicker({
   runner,
   example,
