@@ -9,7 +9,7 @@ Owner access remains single-operator: owner sessions and the internal API token 
 1. Open your deployed Worker and sign in with your `WEB_ACCESS_CODE`, or share the separate `DEMO_ACCESS_CODE` for an isolated demo.
 2. Choose **New chat**, then select Pi or OpenCode and a repository in the message composer. Connect GitHub to browse authorized public and private repositories, or use the public example.
 3. Send your first message to create the cloud session. Preparation and cloning appear in the conversation immediately.
-4. Continue in the same chat after each reply. **Tools** shows live activity; **Changes** opens the cumulative diff, repository explorer, and editor.
+4. Continue in the same chat after each reply. Assistant text and expandable tool steps stream directly in the conversation for both Pi and OpenCode. **Execution logs** opens a collapsible bottom panel without changing views; **Changes** opens the cumulative diff, repository explorer, and editor.
 5. Review the changes and use **Create PR** to publish a draft, or download the patch. Publication is explicit; agents do not merge or deploy changes.
 
 Overview and session details slide open and closed, with short transitions for views, menus, and dialogs. Hidden panels cannot receive keyboard input, and system reduced-motion preferences disable these effects. Changing selectors or opening a new chat does not start an agent. Repository search filters the loaded catalog; **Load more** retrieves additional entries. The selected repository is remembered on the server after access validation.
@@ -51,6 +51,8 @@ npm run dev            # Build UI and run the local Worker (Docker required).
 npm run dev:ui         # Vite UI with hot reload; needs the Worker on :8787.
 npm run preview:editor # Simulated UI on :8795; no Cloudflare or model calls.
 ```
+
+Use `--live-activity` for timed Pi text/tool events, or `--live-activity --opencode` for the normalized OpenCode stream. These are simulated events, not model calls. Inline activity is held in browser memory with bounds; the current turn can replay the saved log tail after reload, while older turns retain their saved final responses. It is not a complete durable activity archive.
 
 The fixture preview uses `fixture-access-code-for-preview-only` if you test signing out and back in. Run it with `--slow`, `--slow-start`, `--long-running` (two-minute simulated turns), or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
 

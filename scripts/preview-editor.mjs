@@ -21,7 +21,12 @@ let authenticated = true,
   deletes = 0,
   publishes = 0;
 const requests = new Set();
-const initial = "pi-editor-demo";
+const inlineDemo = process.argv.includes("--live-activity");
+const previewAgent = process.argv.includes("--opencode") ? "opencode" : "pi";
+const initial = `${previewAgent}-editor-demo`;
+const demoDuration = 25000;
+const demoReply =
+  "Updated the repository picker and kept the selection in the same cloud session. The focused checks passed in this simulated preview.\n\nReview the changes below, or send another instruction to continue.";
 const patch = `diff --git a/web/App.tsx b/web/App.tsx
 index 1234567..2345678 100644
 --- a/web/App.tsx
@@ -94,18 +99,20 @@ const tasks = new Map([
     initial,
     {
       containerRunning: true,
-      agent: "pi",
-      state: "succeeded",
+      agent: previewAgent,
+      state: inlineDemo ? "running" : "succeeded",
       turns: [
         {
           number: 1,
           id: "first",
-          prompt:
-            "Arrange the interface as an editor: sessions, changes, and agent chat. Keep the GitHub connection.",
-          response:
-            '## Workspace updated\n\nThe session now keeps **your files and agent context** together.\n\n- Browse the repository in Files.\n- Edit code and save it to the cloud.\n- Review the accumulated diff before creating a PR.\n\n```tsx\nexport default function App() {\n  return <Workspace session="cloud" />;\n}\n```\n\n| Check | Result |\n| --- | --- |\n| TypeScript | Passed |\n| Session recovery | Preserved |\n\nNext, open `web/App.tsx` and adjust the layout.',
-          state: "succeeded",
-          startedAt: Date.now() - 120000,
+          prompt: inlineDemo
+            ? "Improve the repository picker and verify the change."
+            : "Arrange the interface as an editor: sessions, changes, and agent chat. Keep the GitHub connection.",
+          response: inlineDemo
+            ? undefined
+            : '## Workspace updated\n\nThe session now keeps **your files and agent context** together.\n\n- Browse the repository in Files.\n- Edit code and save it to the cloud.\n- Review the accumulated diff before creating a PR.\n\n```tsx\nexport default function App() {\n  return <Workspace session="cloud" />;\n}\n```\n\n| Check | Result |\n| --- | --- |\n| TypeScript | Passed |\n| Session recovery | Preserved |\n\nNext, open `web/App.tsx` and adjust the layout.',
+          state: inlineDemo ? "running" : "succeeded",
+          startedAt: inlineDemo ? Date.now() : Date.now() - 120000,
         },
       ],
       patch,
@@ -121,11 +128,17 @@ const remembered = {
   defaultBranch: "main",
   url: "https://github.com/gilbertsahumada/cf-sandbox-coding.git",
 };
+if (inlineDemo)
+  tasks.get(initial).timer = setTimeout(
+    () => finish(tasks.get(initial)),
+    demoDuration,
+  );
 function finish(task) {
   task.state = "succeeded";
   task.turns.at(-1).state = "succeeded";
-  task.turns.at(-1).response =
-    task.turns.length === 1
+  task.turns.at(-1).response = inlineDemo
+    ? demoReply
+    : task.turns.length === 1
       ? "The session is ready. Should I continue with the change?"
       : "I continued with the same context and preserved the previous changes.\nThe text <img src=x onerror=alert(1)> is displayed literally.";
 }
@@ -343,7 +356,7 @@ createServer(async (req, res) => {
       });
       task.timer = setTimeout(
         () => finish(task),
-        longRunning ? 120000 : slow ? 8000 : 1300,
+        inlineDemo ? demoDuration : longRunning ? 120000 : slow ? 8000 : 1300,
       );
       return json({ state: "started" }, 202);
     }
@@ -385,7 +398,7 @@ createServer(async (req, res) => {
         });
         task.timer = setTimeout(
           () => finish(task),
-          longRunning ? 120000 : slow ? 8000 : 1600,
+          inlineDemo ? demoDuration : longRunning ? 120000 : slow ? 8000 : 1600,
         );
       }
       return json({ turn: task.turns.length }, 202);
@@ -429,6 +442,170 @@ createServer(async (req, res) => {
       res.write(
         `event: turn\ndata: {"turn":${turn}}\n\nevent: status\ndata: ${JSON.stringify({ state: task.state })}\n\n`,
       );
+      if (inlineDemo) {
+        const events = [];
+        const text = (at, id, value, partial) => {
+          if (task.agent === "opencode") {
+            events.push({
+              at,
+              data: { type: "message_text", part: { id, text: value } },
+            });
+          } else {
+            if (!partial)
+              events.push({
+                at,
+                data: { type: "message_start", message: { role: "assistant" } },
+              });
+            events.push({
+              at,
+              data: {
+                type: "message_update",
+                assistantMessageEvent: { type: "text_delta", delta: value },
+              },
+            });
+            if (!partial)
+              events.push({
+                at: at + 10,
+                data: {
+                  type: "message_end",
+                  message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: value }],
+                  },
+                },
+              });
+          }
+        };
+        const tool = (at, id, name, args) =>
+          events.push({
+            at,
+            data: {
+              type: "tool_execution_start",
+              toolCallId: id,
+              toolName: name,
+              args,
+            },
+          });
+        const result = (at, id, output, partial = false) =>
+          events.push({
+            at,
+            data: partial
+              ? {
+                  type: "tool_execution_update",
+                  toolCallId: id,
+                  partialResult: { content: [{ type: "text", text: output }] },
+                }
+              : {
+                  type: "tool_execution_end",
+                  toolCallId: id,
+                  result: { content: [{ type: "text", text: output }] },
+                },
+          });
+        text(
+          0,
+          "intro",
+          "I’ll inspect the repository picker, make the change, and run its focused checks.",
+        );
+        tool(2000, "read", "read", {
+          path: "web/components/composer-pickers.tsx",
+        });
+        result(
+          4000,
+          "read",
+          "export function RepositoryPicker({ runner, example, onExampleChange }) {\n  // The current selection stays with the cloud session.\n}",
+        );
+        text(
+          6000,
+          "plan",
+          "The picker already keeps the repository context. I’m tightening the selection control and preserving its confirmation step.",
+        );
+        tool(8000, "edit", "edit", {
+          path: "web/components/composer-pickers.tsx",
+          change: "Keep the active repository label visible in the composer.",
+        });
+        result(10000, "edit", "Updated web/components/composer-pickers.tsx");
+        tool(12000, "test", "bash", {
+          command: "npm test -- --test-name-pattern=repository",
+        });
+        result(14000, "test", "Running focused repository checks…", true);
+        result(
+          17000,
+          "test",
+          "Running focused repository checks…\n✓ public URL validation\n✓ confirmation keeps the previous selection on cancel",
+          true,
+        );
+        result(20000, "test", "3 focused checks passed.\nNo failures.");
+        if (task.agent === "pi")
+          events.push({
+            at: 21000,
+            data: { type: "message_start", message: { role: "assistant" } },
+          });
+        if (task.agent === "pi") {
+          text(21500, "final", demoReply.slice(0, 70), true);
+          text(23000, "final", demoReply.slice(70), true);
+          events.push({
+            at: 24000,
+            data: {
+              type: "message_end",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: demoReply }],
+              },
+            },
+          });
+        } else {
+          text(21500, "final", demoReply.slice(0, 70), true);
+          text(23000, "final", demoReply, true);
+          events.push({
+            at: 24000,
+            data: { type: "text", part: { text: demoReply } },
+          });
+        }
+        const archived = task.state !== "running";
+        if (archived) res.write('event: reset\ndata: {"archived":true}\n\n');
+        const elapsed = archived
+          ? Infinity
+          : Date.now() - task.turns.at(-1).startedAt;
+        const timers = [];
+        let cursor = 0;
+        const lastEvent = archived
+          ? 0
+          : Number(String(req.headers["last-event-id"] || "0").split(":")[0]);
+        for (const event of events.sort((a, b) => a.at - b.at)) {
+          const id = ++cursor;
+          if (id <= lastEvent) continue;
+          const send = () => {
+            if (!res.destroyed)
+              res.write(
+                `id: ${id}:0\nevent: stdout\ndata: ${JSON.stringify(JSON.stringify(event.data) + "\n")}\n\n`,
+              );
+          };
+          if (event.at <= elapsed) send();
+          else timers.push(setTimeout(send, event.at - elapsed));
+        }
+        const finishStream = () => {
+          if (task.state === "running") return;
+          for (const timer of timers) clearTimeout(timer);
+          res.write(
+            `event: status\ndata: ${JSON.stringify({ state: task.state, result: task.turns.at(-1)?.response })}\n\nevent: done\ndata: {}\n\n`,
+          );
+          res.end();
+        };
+        if (archived) finishStream();
+        else {
+          const interval = setInterval(() => {
+            if (task.state !== "running") {
+              clearInterval(interval);
+              finishStream();
+            }
+          }, 100);
+          req.on("close", () => {
+            clearInterval(interval);
+            for (const timer of timers) clearTimeout(timer);
+          });
+        }
+        return;
+      }
       const archived = task.state !== "running";
       if (archived) res.write('event: reset\ndata: {"archived":true}\n\n');
       const events = [
@@ -507,7 +684,5 @@ createServer(async (req, res) => {
       : bytes,
   );
 }).listen(port, "127.0.0.1", () =>
-  console.log(
-    `Simulated sessions: http://127.0.0.1:${port}/?task=pi-editor-demo`,
-  ),
+  console.log(`Simulated sessions: http://127.0.0.1:${port}/?task=${initial}`),
 );
