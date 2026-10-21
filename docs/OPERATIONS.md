@@ -62,7 +62,7 @@ npm test
 npm run build
 ```
 
-`check` runs TypeScript checks for the Worker and browser; it is not a general lint pass. `format` applies the repository's pinned Prettier configuration; `format:check` verifies it. CI runs formatting, build, type checks, and tests without model or Cloudflare secrets. See [CONTRIBUTING.md](../CONTRIBUTING.md) for change conventions.
+`check` compiles/checks the container helpers and checks TypeScript for the Worker and browser; it is not a general lint pass. `format` applies the repository's pinned Prettier configuration; `format:check` verifies it. CI runs formatting, build, type checks, and tests without model or Cloudflare secrets. See [CONTRIBUTING.md](../CONTRIBUTING.md) for change conventions.
 
 ### Simulated browser preview
 

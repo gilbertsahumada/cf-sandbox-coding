@@ -5,7 +5,7 @@ import type {
   RepositoryFileOperation,
   RepositoryFilesResult,
 } from "./workspace-files";
-import workspaceFilesSource from "../container/workspace-files.mjs.txt";
+import workspaceFilesSource from "../dist/container/workspace-files.mjs.txt";
 import { createHash } from "node:crypto";
 import {
   continuationReason,

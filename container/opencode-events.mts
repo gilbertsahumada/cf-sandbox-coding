@@ -1,10 +1,59 @@
-export function openCodeEvents(sessionID) {
-  const seen = new Set(),
-    outputs = new Map(),
-    types = new Map(),
-    texts = new Map(),
-    assistants = new Set();
-  return (event) => {
+// The consumed subset of OpenCode's event envelope; runtime guards remain below.
+export type OpenCodeEvent = {
+  type: string;
+  properties?: {
+    info?: { sessionID: string; role: string; id: string };
+    sessionID?: string;
+    field?: string;
+    partID?: string;
+    messageID?: string;
+    delta?: string;
+    part?: {
+      id: string;
+      type: string;
+      sessionID: string;
+      messageID: string;
+      text?: string;
+      tool?: string;
+      state?: {
+        status: string;
+        input?: unknown;
+        output?: string;
+        error?: string;
+        metadata?: { output?: unknown };
+      };
+    };
+  };
+};
+export type ActivityEvent =
+  | { type: "message_text"; part: { id: string | undefined; text: string } }
+  | {
+      type: "tool_execution_start";
+      toolCallId: string;
+      toolName?: string;
+      args?: unknown;
+    }
+  | {
+      type: "tool_execution_end";
+      toolCallId: string;
+      toolName?: string;
+      isError: boolean;
+      result: { content: { type: string; text: string }[] };
+    }
+  | {
+      type: "tool_execution_update";
+      toolCallId: string;
+      toolName?: string;
+      partialResult: { content: { type: string; text: string }[] };
+    };
+
+export function openCodeEvents(sessionID: string) {
+  const seen = new Set<string>(),
+    outputs = new Map<string, string>(),
+    types = new Map<string | undefined, string>(),
+    texts = new Map<string | undefined, string>(),
+    assistants = new Set<string | undefined>();
+  return (event: OpenCodeEvent): ActivityEvent[] => {
     const properties = event.properties || {};
     if (event.type === "message.updated") {
       if (
@@ -39,12 +88,12 @@ export function openCodeEvents(sessionID) {
     }
     if (
       part.type !== "tool" ||
-      !["running", "completed", "error"].includes(part.state?.status)
+      !["running", "completed", "error"].includes(part.state?.status as string)
     )
       return [];
-    const state = part.state,
+    const state = part.state!,
       key = `${part.id}:${state.status}`,
-      events = [];
+      events: ActivityEvent[] = [];
     if (!seen.has(key)) {
       seen.add(key);
       events.push(

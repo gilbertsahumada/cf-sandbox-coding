@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
 // Keep byte cursors on UTF-8 boundaries so reconnecting never loses half a character.
-export function completeUtf8Length(buffer) {
+export function completeUtf8Length(buffer: Uint8Array) {
   if (!buffer.length) return 0;
   let start = buffer.length - 1;
   while (
@@ -25,15 +25,15 @@ export function completeUtf8Length(buffer) {
   return start + length > buffer.length ? start : buffer.length;
 }
 export async function followTask(
-  directory,
+  directory: string,
   initial = [0, 0],
-  write = async (text) => {
+  write = async (text: string) => {
     if (!process.stdout.write(text)) await once(process.stdout, "drain");
   },
 ) {
   const offsets = [...initial];
   const paths = ["stdout.log", "stderr.log"];
-  const frame = (type, data) =>
+  const frame = (type: string, data: unknown) =>
     `id: ${offsets.join(":")}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
   let lastHeartbeat = Date.now();
   for (;;) {
@@ -42,7 +42,8 @@ export async function followTask(
       exitCode = Number(
         (await readFile(`${directory}/exit-code`, "utf8")).trim(),
       );
-    } catch (error) {
+    } catch (caught) {
+      const error = caught as NodeJS.ErrnoException & { status?: number };
       if (error.code !== "ENOENT") throw error;
     }
     let changed = false;
@@ -75,7 +76,8 @@ export async function followTask(
             bytes.subarray(0, length).toString("utf8"),
           ),
         );
-      } catch (error) {
+      } catch (caught) {
+        const error = caught as NodeJS.ErrnoException & { status?: number };
         if (error.code !== "ENOENT") throw error;
       } finally {
         await handle?.close();

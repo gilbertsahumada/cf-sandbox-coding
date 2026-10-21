@@ -3,11 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export function exportChanges(directory, base) {
+type GitEntry = { mode: string; type: string; sha: string };
+type ExportedFile = Omit<GitEntry, "sha"> & {
+  path: string;
+  sha: string | null;
+  content?: string;
+};
+
+export function exportChanges(directory: string, base: string) {
   if (!/^[a-f0-9]{40}$/.test(base)) throw Error("Invalid base commit");
   const temporary = mkdtempSync(join(tmpdir(), "runner-export-"));
   const env = { ...process.env, GIT_INDEX_FILE: join(temporary, "index") };
-  const git = (...args) =>
+  const git = (...args: string[]) =>
     execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], {
       cwd: directory,
       env,
@@ -17,7 +24,7 @@ export function exportChanges(directory, base) {
     git("read-tree", base);
     git("add", "-A", "--", ".");
     const tree = git("write-tree").toString().trim();
-    const entries = (sha) =>
+    const entries = (sha: string): Map<string, GitEntry> =>
       new Map(
         git("ls-tree", "-rz", sha)
           .toString("utf8")
@@ -41,10 +48,10 @@ export function exportChanges(directory, base) {
         throw Error(
           "The proposal exceeds the 200-file limit. Download the patch.",
         );
-      const file = {
+      const file: ExportedFile = {
         path,
-        mode: current?.mode || old.mode,
-        type: current?.type || old.type,
+        mode: current?.mode || old!.mode,
+        type: current?.type || old!.type,
         sha: current?.sha || null,
       };
       if (current?.type === "blob") {
@@ -66,7 +73,8 @@ if (process.argv[1]?.endsWith("/export-changes.mjs")) {
     console.log(
       JSON.stringify(exportChanges(process.argv[2], process.argv[3])),
     );
-  } catch (error) {
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
     console.log(JSON.stringify({ error: error.message }));
     process.exitCode = 1;
   }
