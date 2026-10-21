@@ -37,6 +37,19 @@ export function useSessionMonitor(
     (id: string) => monitor.current?.resume(id) || Promise.resolve([]),
     [],
   );
+  const remove = useCallback((id: string) => {
+    monitor.current?.suspend(id);
+    setSnapshots((items) => {
+      const next = { ...items };
+      delete next[id];
+      return next;
+    });
+    setChecking((items) => {
+      const next = new Set(items);
+      next.delete(id);
+      return next;
+    });
+  }, []);
   useEffect(() => {
     setSnapshots({});
     setChecking(new Set());
@@ -87,5 +100,5 @@ export function useSessionMonitor(
   useEffect(() => {
     if (ids) void refresh(ids.split(","));
   }, [ids, refresh]);
-  return { snapshots, checking, refresh, suspend, resume };
+  return { snapshots, checking, refresh, suspend, resume, remove };
 }

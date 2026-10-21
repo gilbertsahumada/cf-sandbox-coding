@@ -12,6 +12,8 @@ import {
   Search,
   RefreshCw,
   Square,
+  Trash2,
+  CircleAlert,
   Settings2,
   X,
 } from "lucide-react";
@@ -36,6 +38,15 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./ui/dialog";
+import { Alert, AlertDescription } from "./ui/alert";
 
 export type SessionView = "session" | "history" | "new" | "review" | "tools";
 type SessionProps = { runner: Runner; titles: Record<string, string> };
@@ -63,7 +74,7 @@ function StopSessionButton({ runner, run }: { runner: Runner; run: Run }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="destructive"
+          variant="destructive-ghost"
           size="icon-xs"
           className="overview-stop"
           aria-label={`Stop session ${run.id}`}
@@ -71,6 +82,7 @@ function StopSessionButton({ runner, run }: { runner: Runner; run: Run }) {
             !runner.connected ||
             runner.checking ||
             stopping ||
+            runner.deletingIds.has(run.id) ||
             runner.sendingIds.has(run.id)
           }
           onClick={() => void runner.stopSession(run.id)}
@@ -84,6 +96,106 @@ function StopSessionButton({ runner, run }: { runner: Runner; run: Run }) {
     </Tooltip>
   );
 }
+function SessionRowActions({
+  runner,
+  run,
+  title,
+}: {
+  runner: Runner;
+  run: Run;
+  title: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const deleting = runner.deletingIds.has(run.id);
+  const busy =
+    deleting ||
+    run.state === "cloning" ||
+    runner.stoppingIds.has(run.id) ||
+    runner.startingIds.has(run.id) ||
+    runner.sendingIds.has(run.id);
+  async function remove() {
+    setError("");
+    try {
+      await runner.deleteSession(run.id);
+      setOpen(false);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Could not delete the session.",
+      );
+    }
+  }
+  return (
+    <div className="session-row-actions">
+      <StopSessionButton runner={runner} run={run} />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Delete session ${run.id}`}
+            disabled={!runner.connected || runner.checking || busy}
+            onClick={() => {
+              setError("");
+              setOpen(true);
+            }}
+          >
+            {deleting ? <Spinner aria-hidden="true" /> : <Trash2 />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Delete session</TooltipContent>
+      </Tooltip>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!deleting) setOpen(value);
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton={!deleting}>
+          <DialogHeader>
+            <DialogTitle>Delete this session?</DialogTitle>
+            <DialogDescription>{title}</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Delete permanently stops the workspace and removes its conversation,
+            files, logs, and saved changes from the cloud. This cannot be
+            undone. Published GitHub PRs are kept.
+          </p>
+          {error ? (
+            <Alert variant="destructive">
+              <CircleAlert aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void remove()}
+            >
+              {deleting ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <Trash2 data-icon="inline-start" />
+              )}
+              {deleting ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function sessionSection(runner: Runner, run: Run) {
   if (sessionIsRunning(run, runner.sessions.snapshots[run.id]))
     return "Running sessions";
@@ -237,7 +349,11 @@ export function SessionNavigation({
                         </small>
                       </span>
                     </Button>
-                    <StopSessionButton runner={runner} run={run} />
+                    <SessionRowActions
+                      runner={runner}
+                      run={run}
+                      title={sessionTitle(run, titles)}
+                    />
                   </div>
                 ))}
               </section>
@@ -385,7 +501,11 @@ export function SessionHistory({
               </span>
               <time>{relativeTime(run.startedAt)}</time>
             </Button>
-            <StopSessionButton runner={runner} run={run} />
+            <SessionRowActions
+              runner={runner}
+              run={run}
+              title={sessionTitle(run, titles)}
+            />
           </div>
         ))}
       </nav>
@@ -450,7 +570,9 @@ export function SessionDetails({
   return (
     <aside
       className="session-details"
-      hidden={hidden}
+      data-hidden={hidden}
+      inert={hidden}
+      aria-hidden={hidden}
       aria-label="Session details"
     >
       <div className="navigation-heading">

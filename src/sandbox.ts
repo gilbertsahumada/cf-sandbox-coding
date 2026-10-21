@@ -462,6 +462,7 @@ export class AgentSandbox extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
+    if (this.isDeleted()) return;
     if (this.changing || this.publishing) {
       await this.ctx.storage.setAlarm(Date.now() + sandboxTiming.taskCheckMs);
       return;
@@ -528,6 +529,27 @@ export class AgentSandbox extends DurableObject<Env> {
       if (this.container.running)
         await this.ctx.storage.setAlarm(Date.now() + sandboxTiming.taskCheckMs);
       throw error;
+    } finally {
+      this.changing = false;
+    }
+  }
+
+  isDeleted(): boolean {
+    return this.ctx.storage.kv.get<boolean>("deleted") === true;
+  }
+
+  async deleteSession(): Promise<{ deleted: true }> {
+    if (this.isDeleted()) return { deleted: true };
+    await this.stopTask();
+    if (this.changing || this.publishing)
+      throw Error("Wait for the current operation to finish.");
+    this.changing = true;
+    try {
+      // Stop before erasing archives so deletion cannot leave an untracked agent running.
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      this.ctx.storage.kv.put("deleted", true);
+      return { deleted: true };
     } finally {
       this.changing = false;
     }

@@ -206,7 +206,7 @@ export default {
     if (new URL(request.url).pathname === "/health" && request.method === "GET")
       return Response.json({ ok: true, agents: Agent.options });
     const match =
-      /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages|files|file|runtime)$/.exec(
+      /^\/sandboxes\/([a-z0-9][a-z0-9-]{0,62})\/(repository|task|diff|logs|events|pull-request|messages|files|file|runtime|session)$/.exec(
         new URL(request.url).pathname,
       );
     if (!match) return new Response("Not found", { status: 404 });
@@ -221,6 +221,28 @@ export default {
       principal.role === "demo" ? `demo:${principal.subject}:${name}` : name,
     );
     try {
+      if (resource === "session" && request.method === "DELETE") {
+        try {
+          return Response.json(await sandbox.deleteSession(), {
+            headers: { "cache-control": "no-store" },
+          });
+        } catch (error) {
+          return Response.json(
+            {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Could not delete the session.",
+            },
+            { status: 409 },
+          );
+        }
+      }
+      if (await sandbox.isDeleted())
+        return Response.json(
+          { message: "This session has been deleted." },
+          { status: 410, headers: { "cache-control": "no-store" } },
+        );
       if (resource === "files" || resource === "file") {
         const headers = { "cache-control": "no-store" };
         const url = new URL(request.url);

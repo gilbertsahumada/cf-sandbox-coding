@@ -303,17 +303,16 @@ export function NewConversation({
           <FormError error={error} />
         </FieldGroup>
       </form>
-      {repositoryDialogOpen ? (
-        <PublicRepositoryDialog
-          initialUrl={publicRepository?.url || ""}
-          onCancel={() => setRepositoryDialogOpen(false)}
-          onConfirm={(repository) => {
-            setPublicRepository(repository);
-            setDemoRepository("custom");
-            setRepositoryDialogOpen(false);
-          }}
-        />
-      ) : null}
+      <PublicRepositoryDialog
+        open={repositoryDialogOpen}
+        initialUrl={publicRepository?.url || ""}
+        onCancel={() => setRepositoryDialogOpen(false)}
+        onConfirm={(repository) => {
+          setPublicRepository(repository);
+          setDemoRepository("custom");
+          setRepositoryDialogOpen(false);
+        }}
+      />
       <p className="new-conversation-hint">
         {!runner.demo && !runner.repository && !example
           ? "Choose a repository before sending your first message."
