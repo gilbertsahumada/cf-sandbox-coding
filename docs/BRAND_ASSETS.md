@@ -7,5 +7,4 @@ Retrieved on 2026-10-20 from the projects' official websites. These marks identi
 
 Assets are served from the application's own origin under the existing CSP. No external image requests, new packages or network permissions are required. Agent names remain visible beside decorative marks for accessibility. The assets remain the respective projects' brand marks; inclusion does not imply endorsement or transfer trademark rights.
 
-
 - **Cloudflare**: `public/assets/providers/cloudflare.png` is the cloud icon downloaded from https://cf-assets.www.cloudflare.com/slt3lc6tev37/CHOl0sUhrumCxOXfRotGt/081f81d52274080b2d026fdf163e3009/cloudflare-icon-color_3x.png, published at https://www.cloudflare.com/trademark/. The file and its original orange colors are unchanged. It accompanies the referential hosting label “Cloudflare Sandbox” and a keyboard-accessible tooltip explaining session isolation.

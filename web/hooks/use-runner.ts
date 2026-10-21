@@ -1,3 +1,10 @@
+import { runnerConfig, workspaceConfig } from "@/lib/config";
+import type {
+  GitHubConnection,
+  RememberedRepository,
+  RepositoryPage,
+  TaskStatus,
+} from "@/lib/api-types";
 import { prepareSession, type Startup } from "@/lib/session-start";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { historyForStorage, recoveredRun } from "@/lib/run-history.js";
@@ -12,13 +19,14 @@ import {
   type Repository,
   type Run,
   type RunState,
+  type StreamState,
 } from "@/lib/types";
 function initialHistory(): Run[] {
   let runs: Run[] = [];
   try {
     runs = historyForStorage(
-      JSON.parse(localStorage.getItem("sandbox-runs") || "[]"),
-    ) as Run[];
+      JSON.parse(localStorage.getItem(runnerConfig.historyStorageKey) || "[]"),
+    );
   } catch {}
   runs = runs.map((run) =>
     run.state === "cloning"
@@ -27,53 +35,59 @@ function initialHistory(): Run[] {
   );
   const recovered = recoveredRun(
     new URL(location.href).searchParams.get("task"),
-  ) as Run | null;
+  );
   return recovered
     ? [
         runs.find((run) => run.id === recovered.id) || recovered,
         ...runs.filter((run) => run.id !== recovered.id),
-      ].slice(0, 12)
+      ].slice(0, runnerConfig.historyLimit)
     : runs;
 }
 const message = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "The operation could not be completed.";
+function taskOutput(status: TaskStatus): string | undefined {
+  if ("result" in status) return status.result;
+  if ("error" in status) return status.error;
+}
+
 export function useRunner() {
   const [runs, setRuns] = useState<Run[]>(initialHistory);
   const [selectedId, setSelectedId] = useState(() => runs[0]?.id || null);
   const selected = runs.find((run) => run.id === selectedId) || null;
-  const [connected, setConnected] = useState(false),
-    [checking, setChecking] = useState(true),
-    [authOpen, setAuthOpen] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [authOpen, setAuthOpen] = useState(false);
   const [startup, setStartup] = useState<Startup | null>(null);
   const startLock = useRef(false);
-  const [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false),
-    [sending, setSending] = useState(false),
-    [stopping, setStopping] = useState(false);
-  const [conversation, setConversation] = useState<Conversation | null>(null),
-    [liveText, setLiveText] = useState<string | null>(null);
-  const [diff, setDiff] = useState(""),
-    [proposal, setProposal] = useState<Proposal | null>(null),
-    [streamState, setStreamState] = useState(""),
-    [loadingTask, setLoadingTask] = useState(false),
-    [loadingDiff, setLoadingDiff] = useState(false);
-  const [revision, setRevision] = useState(0),
-    [activityCount, setActivityCount] = useState(0);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [liveText, setLiveText] = useState<string | null>(null);
+  const [diff, setDiff] = useState("");
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [streamState, setStreamState] = useState<StreamState>("");
+  const [loadingTask, setLoadingTask] = useState(false);
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [activityCount, setActivityCount] = useState(0);
   const activityRef = useRef<HTMLDivElement>(null),
     followRef = useRef(true);
+  // Epochs discard responses that belong to a signed-out session or replaced catalog.
   const authEpoch = useRef(0),
     selectedRef = useRef(selectedId),
     catalogEpoch = useRef(0);
   selectedRef.current = selectedId;
-  const [github, setGithub] = useState<GitHubStatus | null>(null),
-    [repositories, setRepositories] = useState<Repository[]>([]),
-    [repository, setRepository] = useState<Repository | null>(null);
-  const [catalogBusy, setCatalogBusy] = useState(false),
-    [repositoryPage, setRepositoryPage] = useState(1),
-    [repositoryTotal, setRepositoryTotal] = useState(0),
-    [hasMore, setHasMore] = useState(false);
+  const [github, setGithub] = useState<GitHubStatus | null>(null);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [repository, setRepository] = useState<Repository | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [repositoryPage, setRepositoryPage] = useState(1);
+  const [repositoryTotal, setRepositoryTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const rememberQueue = useRef(Promise.resolve()),
     pendingMessage = useRef<{
       task: string;
@@ -115,7 +129,8 @@ export function useRunner() {
         cache: "no-store",
         headers: body ? { "content-type": "application/json" } : {},
         body: body ? JSON.stringify(body) : undefined,
-        signal: options.signal || AbortSignal.timeout(180000),
+        signal:
+          options.signal || AbortSignal.timeout(runnerConfig.requestTimeoutMs),
         keepalive: options.keepalive,
       });
       if (epoch !== authEpoch.current)
@@ -168,7 +183,7 @@ export function useRunner() {
   useEffect(() => {
     try {
       localStorage.setItem(
-        "sandbox-runs",
+        runnerConfig.historyStorageKey,
         JSON.stringify(historyForStorage(runs)),
       );
     } catch {}
@@ -196,7 +211,7 @@ export function useRunner() {
   }, [report]);
   useEffect(() => {
     if (typeof BroadcastChannel !== "function") return;
-    const instance = new BroadcastChannel("sandbox-task-updates");
+    const instance = new BroadcastChannel(runnerConfig.updateChannelName);
     channel.current = instance;
     instance.onmessage = (event) => {
       if (selectedRef.current === event.data?.task)
@@ -212,13 +227,13 @@ export function useRunner() {
       setCatalogBusy(true);
       try {
         const [batch, saved] = await Promise.allSettled([
-          request(`/github/repositories?page=${page}`).then((response) =>
-            response.json(),
+          request(`/github/repositories?page=${page}`).then(
+            (response) => response.json() as Promise<RepositoryPage>,
           ),
           append
             ? Promise.resolve(null)
-            : request("/github/selected-repository").then((response) =>
-                response.json(),
+            : request("/github/selected-repository").then(
+                (response) => response.json() as Promise<RememberedRepository>,
               ),
         ]);
         if (batch.status === "rejected") throw batch.reason;
@@ -266,6 +281,7 @@ export function useRunner() {
     (repo: Repository) => {
       setRepository(repo);
       const ticket = catalogEpoch.current;
+      // Serialize preference writes so an earlier slow selection cannot win the race.
       rememberQueue.current = rememberQueue.current
         .catch(() => {})
         .then(async () => {
@@ -292,8 +308,10 @@ export function useRunner() {
       setAuthOpen(true);
       return;
     }
-    const data = await (await request("/github/connect", {})).json();
-    if (data.url) {
+    const data: GitHubConnection = await (
+      await request("/github/connect", {})
+    ).json();
+    if ("url" in data) {
       location.assign(data.url);
       return;
     }
@@ -418,7 +436,7 @@ export function useRunner() {
             }
           }
         },
-        immediate ? 0 : 2000,
+        immediate ? 0 : runnerConfig.diffDebounceMs,
       );
     };
     const begin = async () => {
@@ -455,14 +473,15 @@ export function useRunner() {
       });
       source.addEventListener("status", (event) => {
         if (!current) return;
-        const status = JSON.parse(event.data),
-          state: RunState = status.state === "none" ? "lost" : status.state;
+        const status: TaskStatus = JSON.parse(event.data);
+        const state: RunState = status.state === "none" ? "lost" : status.state;
         terminal = !isActive(state);
         updateRun(run.id, {
           state,
           ...(terminal ? { finishedAt: Date.now() } : {}),
         });
-        if (status.result || status.error)
+        const output = taskOutput(status);
+        if (output)
           setConversation((previous) =>
             previous?.turns.length
               ? previous
@@ -475,7 +494,7 @@ export function useRunner() {
                       number: 0,
                       id: "legacy",
                       prompt: "Task result",
-                      response: status.result || status.error,
+                      response: output,
                       state,
                       startedAt: run.startedAt || 0,
                     },
@@ -497,8 +516,9 @@ export function useRunner() {
                 signal: controller.signal,
               })
                 .then((response) => response.json())
-                .then((status) => {
-                  if (current && (status.result || status.error))
+                .then((status: TaskStatus) => {
+                  const output = taskOutput(status);
+                  if (current && output)
                     setConversation({
                       ...data,
                       turns: [
@@ -506,7 +526,7 @@ export function useRunner() {
                           number: 0,
                           id: "legacy",
                           prompt: "Task result",
-                          response: status.result || status.error,
+                          response: output,
                           state: status.state,
                           startedAt: run.startedAt || 0,
                         },
@@ -524,7 +544,7 @@ export function useRunner() {
       source.onerror = () => {
         if (!current || terminal) return;
         setStreamState("Reconnecting");
-        if (Date.now() - authCheckedAt > 10000) {
+        if (Date.now() - authCheckedAt > runnerConfig.authRecheckMs) {
           authCheckedAt = Date.now();
           void request("/session").catch((error) => {
             if (current) report(error);
@@ -563,7 +583,7 @@ export function useRunner() {
       method: "POST",
       credentials: "same-origin",
       headers: { authorization: `Bearer ${token.trim()}` },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(runnerConfig.loginTimeoutMs),
     });
     if (!response.ok)
       throw Error(
@@ -597,13 +617,19 @@ export function useRunner() {
       id: `${agent}-${crypto.randomUUID()}`,
       agent,
       private: repo?.private || false,
-      repository: repo?.url || "https://github.com/octocat/Hello-World",
+      repository: repo?.url || workspaceConfig.exampleRepository.url,
       ref,
       state: "cloning",
       startedAt: Date.now(),
     };
     const epoch = authEpoch.current;
-    const preparation: Startup = { task: run.id, agent, prompt, stage: "cloning", startedAt: Date.now() };
+    const preparation: Startup = {
+      task: run.id,
+      agent,
+      prompt,
+      stage: "cloning",
+      startedAt: Date.now(),
+    };
     startLock.current = true;
     setBusy(true);
     setStartup(preparation);
@@ -611,23 +637,32 @@ export function useRunner() {
     setLiveText(null);
     setDiff("");
     setProposal(null);
-    setRuns((items) => [run, ...items].slice(0, 12));
+    setRuns((items) => [run, ...items].slice(0, runnerConfig.historyLimit));
     setSelectedId(run.id);
     setNotice("");
     try {
-      await prepareSession(run.id, {
-        ...(repo
-          ? {
-              installationId: repo.installationId,
-              repositoryId: repo.repositoryId,
-            }
-          : { url: run.repository }),
-        ...(ref ? { ref } : {}),
-      }, { agent, prompt }, request, () => onPreparing?.(), () => {
-        if (epoch !== authEpoch.current) throw new DOMException("Session changed", "AbortError");
-        setStartup({ ...preparation, stage: "starting" });
-      });
-      if (epoch !== authEpoch.current) throw new DOMException("Session changed", "AbortError");
+      await prepareSession(
+        run.id,
+        {
+          ...(repo
+            ? {
+                installationId: repo.installationId,
+                repositoryId: repo.repositoryId,
+              }
+            : { url: run.repository }),
+          ...(ref ? { ref } : {}),
+        },
+        { agent, prompt },
+        request,
+        () => onPreparing?.(),
+        () => {
+          if (epoch !== authEpoch.current)
+            throw new DOMException("Session changed", "AbortError");
+          setStartup({ ...preparation, stage: "starting" });
+        },
+      );
+      if (epoch !== authEpoch.current)
+        throw new DOMException("Session changed", "AbortError");
       setStartup(null);
       updateRun(run.id, { state: "running" });
       setRevision((value) => value + 1);
@@ -654,6 +689,7 @@ export function useRunner() {
         "Wait for the agent to finish before sending another message.",
       );
     const run = selected;
+    // Keep the same message ID when retrying an ambiguous HTTP failure.
     if (
       !pendingMessage.current ||
       pendingMessage.current.task !== run.id ||
@@ -684,7 +720,7 @@ export function useRunner() {
     setStopping(true);
     updateRun(id, { state: "stopping" });
     try {
-      const result = await (
+      const result: TaskStatus = await (
         await request(`/sandboxes/${id}/task`, undefined, "DELETE")
       ).json();
       updateRun(id, { state: result.state, finishedAt: Date.now() });
@@ -707,7 +743,7 @@ export function useRunner() {
   };
   return {
     request,
-    refresh: () => setRevision(value => value + 1),
+    refresh: () => setRevision((value) => value + 1),
     runs,
     selected,
     connected,

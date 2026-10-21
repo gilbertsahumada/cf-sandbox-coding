@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+verification/
+worker-configuration.d.ts
+package-lock.json
+AGENTS.md
+design-qa.md
+.dev.vars*
+.env*
+*.pem
+*.key

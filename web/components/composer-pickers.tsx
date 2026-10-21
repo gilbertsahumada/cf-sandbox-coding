@@ -1,3 +1,4 @@
+import { workspaceConfig } from "@/lib/config";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   Check,
@@ -22,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { agentNames, type Agent } from "@/lib/types";
+import { agents, agentNames, type Agent } from "@/lib/types";
 import type { Runner } from "@/hooks/use-runner";
 
 export function AgentPicker({
@@ -52,12 +53,12 @@ export function AgentPicker({
       >
         <SelectGroup>
           <SelectLabel>Coding agent</SelectLabel>
-          {(["pi", "opencode"] as const).map((agent) => (
+          {agents.map((agent) => (
             <SelectItem value={agent} key={agent} textValue={agentNames[agent]}>
               <AgentLogo agent={agent} />
               <span className="composer-agent-option">
                 <strong>{agentNames[agent]}</strong>
-                <small>Qwen 3.7 Flash</small>
+                <small>{workspaceConfig.modelLabel}</small>
               </span>
             </SelectItem>
           ))}
@@ -84,7 +85,9 @@ export function RepositoryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const name = example ? "octocat/Hello-World" : runner.repository?.fullName;
+  const name = example
+    ? workspaceConfig.exampleRepository.fullName
+    : runner.repository?.fullName;
   const options = useMemo(() => {
     const repositories = [...runner.repositories];
     if (
