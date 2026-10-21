@@ -1,13 +1,5 @@
-import { AgentLogo } from "./agent-logo";
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { AgentPicker, RepositoryPicker } from "./composer-pickers";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
   Cloud,
@@ -15,10 +7,7 @@ import {
   LockKeyhole,
   ArrowUp,
   Unplug,
-  Search,
-  FolderGit2,
   CircleAlert,
-  ChevronsDown,
   GitPullRequest,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -46,13 +35,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import type { Runner } from "@/hooks/use-runner";
 import { agentNames, type Agent } from "@/lib/types";
-import { Skeleton } from "./ui/skeleton";
-const RepositorySelect = lazy(() => import("./repository-select"));
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -176,21 +162,12 @@ export function NewConversation({
   onStarting: () => void;
 }) {
   const [agent, setAgent] = useState<Agent>("pi");
-  const [query, setQuery] = useState("");
   const [ref, setRef] = useState("");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [example, setExample] = useState(false);
-  const [repositoryOpen, setRepositoryOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
-  const options = useMemo(
-    () =>
-      runner.repositories.filter((repo) =>
-        repo.fullName.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [runner.repositories, query],
-  );
   const canSend =
     Boolean(prompt.trim()) &&
     !runner.busy &&
@@ -217,9 +194,6 @@ export function NewConversation({
       setError(errorText(error));
     }
   }
-  const repositoryName = example
-    ? "octocat/Hello-World"
-    : runner.repository?.fullName || "Choose repository";
   return (
     <div className="new-conversation">
       <div className="new-conversation-intro">
@@ -257,35 +231,15 @@ export function NewConversation({
                 align="block-end"
                 className="first-message-actions"
               >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="conversation-repository"
-                  onClick={() => setRepositoryOpen(true)}
-                  aria-label={`Repository: ${repositoryName}`}
-                  title={repositoryName}
-                >
-                  <FolderGit2 data-icon="inline-start" />
-                  <span className="truncate">{repositoryName}</span>
-                </Button>
-                <ToggleGroup
-                  type="single"
-                  value={agent}
-                  onValueChange={(value) => value && setAgent(value as Agent)}
-                  aria-label="Coding agent"
-                  variant="outline"
-                  spacing={0}
-                >
-                  <ToggleGroupItem value="pi" aria-label="Pi">
-                    <AgentLogo agent="pi" data-icon="inline-start" />
-                    Pi
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="opencode" aria-label="OpenCode">
-                    <AgentLogo agent="opencode" data-icon="inline-start" />
-                    OpenCode
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                <AgentPicker value={agent} onChange={setAgent} />
+                <RepositoryPicker
+                  runner={runner}
+                  example={example}
+                  onExampleChange={setExample}
+                  branch={ref}
+                  onBranchChange={setRef}
+                  connectAction={<GitHubConnectButton runner={runner} />}
+                />
                 <InputGroupButton
                   type="submit"
                   variant="default"
@@ -309,124 +263,6 @@ export function NewConversation({
             ? "Choose a repository before sending your first message."
             : `${agentNames[agent]} · Qwen 3.7 Flash${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
       </p>
-      <Dialog open={repositoryOpen} onOpenChange={setRepositoryOpen}>
-        <DialogContent className="conversation-repository-dialog max-h-[85dvh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Conversation repository</DialogTitle>
-            <DialogDescription>
-              Choose the codebase for your next conversation.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            {!runner.github?.connected ? (
-              <GitHubConnectButton runner={runner} />
-            ) : (
-              <>
-                <Field>
-                  <FieldLabel htmlFor="repo-search">
-                    Search repositories
-                  </FieldLabel>
-                  <InputGroup>
-                    <InputGroupInput
-                      id="repo-search"
-                      type="search"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search loaded repositories"
-                    />
-                    <InputGroupAddon>
-                      <Search />
-                    </InputGroupAddon>
-                  </InputGroup>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="repo-select">Repository</FieldLabel>
-                  <Suspense
-                    fallback={
-                      <Skeleton
-                        className="h-8 w-full"
-                        aria-label="Loading repository selector"
-                        role="status"
-                      />
-                    }
-                  >
-                    <RepositorySelect
-                      selected={runner.repository}
-                      options={options}
-                      example={example}
-                      disabled={runner.catalogBusy && !options.length}
-                      onSelect={(repo) => {
-                        setExample(false);
-                        runner.chooseRepository(repo);
-                      }}
-                    />
-                  </Suspense>
-                  <FieldDescription>
-                    Showing {runner.repositories.length} of{" "}
-                    {Math.max(
-                      runner.repositoryTotal,
-                      runner.repositories.length,
-                    )}{" "}
-                    repositories.
-                    {query
-                      ? ` ${options.length} matches among loaded repositories.`
-                      : ""}
-                  </FieldDescription>
-                  {runner.hasMore ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={runner.catalogBusy}
-                      onClick={() => void runner.loadMore()}
-                    >
-                      {runner.catalogBusy ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : (
-                        <ChevronsDown data-icon="inline-start" />
-                      )}
-                      {runner.catalogBusy
-                        ? "Loading…"
-                        : "Load more repositories"}
-                    </Button>
-                  ) : null}
-                </Field>
-              </>
-            )}
-            <Field>
-              <FieldLabel htmlFor="repo-ref">
-                Branch or tag{" "}
-                <span className="text-muted-foreground">optional</span>
-              </FieldLabel>
-              <Input
-                id="repo-ref"
-                value={ref}
-                maxLength={255}
-                onChange={(event) => setRef(event.target.value)}
-                placeholder={
-                  runner.repository?.defaultBranch || "Default branch"
-                }
-              />
-            </Field>
-            {example ? (
-              <p className="text-sm text-muted-foreground">
-                Using octocat/Hello-World.
-              </p>
-            ) : null}
-            <div className="repository-dialog-actions">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setExample(true)}
-              >
-                Use public example
-              </Button>
-              <Button type="button" onClick={() => setRepositoryOpen(false)}>
-                Done
-              </Button>
-            </div>
-          </FieldGroup>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

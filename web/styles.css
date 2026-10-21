@@ -2463,3 +2463,213 @@ a {
   outline: 1px solid var(--ring);
   outline-offset: 1px;
 }
+
+/* Compact, anchored context pickers for the first-message composer. */
+.first-message-actions > .composer-picker-trigger {
+  height: 29px;
+  min-width: 0;
+  max-width: 240px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+  font-size: 11px;
+}
+.first-message-actions > .composer-picker-trigger:hover,
+.first-message-actions > .composer-picker-trigger[data-state="open"] {
+  background: var(--accent);
+  border-color: var(--border);
+}
+.composer-picker-trigger svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.composer-picker-trigger [data-slot="select-value"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.composer-agent-menu {
+  min-width: 210px;
+  border-radius: 12px;
+}
+.composer-agent-menu [data-slot="select-item"] {
+  padding: 8px;
+  font-size: 12px;
+}
+.composer-agent-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.composer-agent-option strong {
+  font-weight: 500;
+}
+.composer-agent-option small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.composer-repository-menu {
+  width: min(350px, calc(100vw - 24px));
+  max-height: min(480px, var(--radix-popover-content-available-height));
+  overflow: auto;
+  gap: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  box-shadow: 0 12px 36px #0005;
+}
+.composer-picker-heading {
+  padding: 5px 7px 8px;
+  font-weight: 600;
+  color: var(--heading);
+}
+.composer-repository-search {
+  position: relative;
+  margin: 0 2px 5px;
+}
+.composer-repository-search > svg {
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+.composer-repository-search input {
+  height: 32px;
+  padding-left: 29px;
+  font-size: 12px;
+}
+.composer-repository-results {
+  max-height: 220px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.composer-repository-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 7px;
+}
+.composer-repository-option:hover,
+.composer-repository-option:focus-visible,
+.composer-example-option:hover {
+  background: var(--accent);
+}
+.composer-repository-option[aria-pressed="true"] {
+  background: var(--secondary);
+}
+.composer-repository-option > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.composer-repository-option > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.composer-repository-option strong {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--heading);
+}
+.composer-repository-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.composer-repository-option .repository-check {
+  margin-left: auto;
+  color: var(--foreground);
+}
+.composer-catalog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 7px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.composer-catalog-footer button {
+  height: 26px;
+  font-size: 10px;
+}
+.composer-branch {
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+}
+.composer-branch > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.composer-branch input {
+  height: 27px;
+  min-width: 0;
+  font-size: 11px;
+}
+.composer-branch > span {
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.composer-example-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.composer-example-option svg {
+  width: 14px;
+  height: 14px;
+}
+.composer-example-option svg:last-child:not(:first-child) {
+  margin-left: auto;
+}
+.composer-picker-empty,
+.composer-connect-action {
+  padding: 16px 9px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 600px) {
+  .first-message-actions > .composer-repository-trigger {
+    max-width: calc(100% - 150px);
+  }
+}
+@media (max-width: 600px) {
+  .first-message-actions {
+    flex-wrap: nowrap;
+  }
+  .first-message-actions > .composer-picker-trigger:first-child {
+    flex-shrink: 0;
+  }
+  .first-message-actions > .composer-repository-trigger {
+    flex: 1;
+    max-width: none;
+    padding-inline: 5px;
+  }
+  .first-message-actions > button[type="submit"] {
+    flex-shrink: 0;
+  }
+}
