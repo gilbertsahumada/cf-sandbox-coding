@@ -17,7 +17,8 @@
     "preview:editor": "npm run build && node scripts/preview-editor.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build:container": "node scripts/build-container.mjs"
+    "build:container": "node scripts/build-container.mjs",
+    "verify:browser-secrets": "node scripts/check-browser-secrets.mjs"
   },
   "dependencies": {
     "@cloudflare/sandbox": "1.0.1",

@@ -5,6 +5,7 @@ import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
 const port = Number(process.env.PREVIEW_PORT || 8795);
+const demoPreview = process.argv.includes("--demo");
 const noDone = process.argv.includes("--no-done");
 const failChanges = process.argv.includes("--fail-changes");
 const pendingChanges = process.argv.includes("--pending-changes");
@@ -144,9 +145,15 @@ createServer(async (req, res) => {
     if (req.method === "DELETE") authenticated = false;
     if (req.method === "POST")
       authenticated =
-        req.headers.authorization === "Bearer fixture-runner-token";
+        req.headers.authorization ===
+        "Bearer fixture-access-code-for-preview-only";
     return json(
-      { ok: authenticated, model: "qwen3.7-flash" },
+      {
+        ok: authenticated,
+        model: "qwen3.7-flash",
+        role: demoPreview ? "demo" : "owner",
+        workspace: demoPreview ? "fixture-visitor" : "owner",
+      },
       req.method === "DELETE" || authenticated ? 200 : 401,
     );
   }
@@ -405,7 +412,14 @@ createServer(async (req, res) => {
       return json(task.pr, 201);
     }
     if (resource === "pull-request")
-      return json({ available: task.state !== "running", pr: task.pr });
+      return json(
+        demoPreview
+          ? {
+              available: false,
+              reason: "Pull request publication is disabled in the demo.",
+            }
+          : { available: task.state !== "running", pr: task.pr },
+      );
     if (resource === "events") {
       res.writeHead(200, {
         "content-type": "text/event-stream",

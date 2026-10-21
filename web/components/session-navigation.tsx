@@ -262,9 +262,11 @@ export function SessionNavigation({
         <Button variant="ghost" onClick={settings}>
           <Settings2 data-icon="inline-start" />
           <span className="truncate">
-            {runner.github?.connected
-              ? runner.github.accounts.join(", ")
-              : "Connect GitHub"}
+            {runner.demo
+              ? "Demo access"
+              : runner.github?.connected
+                ? runner.github.accounts.join(", ")
+                : "Connect GitHub"}
           </span>
         </Button>
         <Tooltip>

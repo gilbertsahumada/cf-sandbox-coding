@@ -1,3 +1,7 @@
 # Copia a .dev.vars para desarrollo. No guardes claves en Git.
 MODEL_API_KEY=
 RUNNER_API_TOKEN=
+
+# Separate random codes (at least 24 characters); never reuse an API credential.
+WEB_ACCESS_CODE=
+DEMO_ACCESS_CODE=

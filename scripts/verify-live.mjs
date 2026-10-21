@@ -6,17 +6,23 @@ if (!url || !url.startsWith("https://"))
   throw new Error(
     "Usage: node scripts/verify-live.mjs https://worker.workers.dev",
   );
-const { RUNNER_API_TOKEN } = parseEnv(await readFile(".dev.vars", "utf8"));
+const { RUNNER_API_TOKEN, WEB_ACCESS_CODE } = parseEnv(
+  await readFile(".dev.vars", "utf8"),
+);
 if (!RUNNER_API_TOKEN) throw new Error("RUNNER_API_TOKEN is required");
 let headers = {
   authorization: `Bearer ${RUNNER_API_TOKEN}`,
   "content-type": "application/json",
 };
 if (process.argv.includes("--session")) {
+  if (!WEB_ACCESS_CODE)
+    throw new Error(
+      "WEB_ACCESS_CODE is required for browser session verification",
+    );
   const origin = new URL(url).origin;
   const response = await fetch(origin + "/session", {
     method: "POST",
-    headers: { ...headers, origin },
+    headers: { ...headers, authorization: `Bearer ${WEB_ACCESS_CODE}`, origin },
   });
   if (!response.ok) throw new Error("Web login failed: " + response.status);
   const cookie = response.headers.get("set-cookie");
