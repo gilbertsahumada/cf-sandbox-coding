@@ -204,6 +204,13 @@ createServer(async (req, res) => {
     if (!authenticated) return json({ message: "Not signed in" }, 401);
     const [, id, resource] = match;
     let task = tasks.get(id);
+    if (resource === "session" && req.method === "DELETE") {
+      if (task) {
+        task.containerRunning = false;
+        tasks.delete(id);
+      }
+      return json({ deleted: true });
+    }
     if (resource === "repository") {
       if (slowStart) await new Promise((resolve) => setTimeout(resolve, 8000));
       if (failStart)

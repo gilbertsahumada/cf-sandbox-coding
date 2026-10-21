@@ -164,6 +164,9 @@ function fixture() {
       },
       setAlarm: async () => {},
       deleteAlarm: async () => {},
+      deleteAll: async () => {
+        stored.clear();
+      },
     },
   };
   const sandbox = new AgentSandbox(ctx, config);
@@ -404,6 +407,7 @@ test("chat routes enforce authentication, same-origin mutations and validated me
     RUNNER_API_TOKEN: "test-runner",
     SANDBOX: {
       getByName: () => ({
+        isDeleted: async () => false,
         conversation: async () => ({ turns: [], canContinue: true }),
         sendMessage: async (...args: unknown[]) => {
           received.push(args);
@@ -600,6 +604,7 @@ test("file routes preserve authentication, CSRF checks, version validation and p
     RUNNER_API_TOKEN: "test-runner",
     SANDBOX: {
       getByName: () => ({
+        isDeleted: async () => false,
         repositoryFiles: async (...args: unknown[]) => {
           received.push(args);
           return { path: "file.ts", content: "text", version: "a".repeat(64) };
@@ -767,6 +772,7 @@ test("lightweight runtime routing remains authenticated and never returns full t
     RUNNER_API_TOKEN: crypto.randomUUID(),
     SANDBOX: {
       getByName: () => ({
+        isDeleted: async () => false,
         sessionStatus: async () => {
           statusReads++;
           return { state: "running", containerRunning: true };
@@ -841,6 +847,7 @@ test("workspace start routing requires authentication and an authorized mutation
     RUNNER_API_TOKEN: crypto.randomUUID(),
     SANDBOX: {
       getByName: () => ({
+        isDeleted: async () => false,
         startSession: async () => {
           starts++;
           return { state: "succeeded", containerRunning: true };
@@ -925,6 +932,7 @@ test("demo login separates browser codes from internal credentials and isolates 
       getByName: (name: string) => {
         namespaces.push(name);
         return {
+          isDeleted: async () => false,
           executionStatus: async () => ({
             state: "none",
             containerRunning: false,
@@ -1076,4 +1084,89 @@ test("demo login separates browser codes from internal credentials and isolates 
   const ownerCookie = owner.headers.get("set-cookie")!.split(";")[0];
   await get("/sandboxes/pi-owner-secret/task", ownerCookie);
   assert.equal(namespaces.at(-1), "pi-owner-secret");
+});
+
+test("deleting a cloud session stops either agent and erases archives and checkpoints idempotently", async () => {
+  for (const agent of ["pi", "opencode"] as const) {
+    const f = fixture();
+    await f.sandbox.startTask("Create a draft", agent);
+    f.stored.set("diff:0", "saved change");
+    f.stored.set("githubGrant", {
+      installationId: 1,
+      repositoryId: 42,
+      fullName: "owner/repo",
+    });
+    assert.deepEqual(await f.sandbox.deleteSession(), { deleted: true });
+    assert.equal(f.container.running, false);
+    assert.deepEqual([...f.stored.entries()], [["deleted", true]]);
+    assert.equal(f.sandbox.isDeleted(), true);
+    assert.deepEqual(await f.sandbox.deleteSession(), { deleted: true });
+    await f.sandbox.alarm();
+    assert.deepEqual([...f.stored.entries()], [["deleted", true]]);
+  }
+});
+
+test("a failed stop or an operation in progress does not erase a cloud session", async () => {
+  const f = fixture();
+  await f.sandbox.startTask("Keep this context", "pi");
+  f.sandbox.changing = true;
+  await assert.rejects(f.sandbox.deleteSession(), /current operation/);
+  f.sandbox.changing = false;
+  f.container.destroy = async () => {
+    throw Error("Simulated shutdown failure");
+  };
+  await assert.rejects(f.sandbox.deleteSession(), /shutdown failure/);
+  assert.equal(f.stored.get("repositoryReady"), true);
+  assert.notEqual(f.stored.get("deleted"), true);
+});
+
+test("cloud deletion enforces authentication, origin, tombstones, and demo namespace isolation", async () => {
+  const { sessionCookie } = await import("../src/auth");
+  const owner = fixture();
+  const visitor = fixture();
+  await owner.sandbox.startTask("Owner work", "pi");
+  await visitor.sandbox.startTask("Visitor work", "pi");
+  const env = {
+    ...config,
+    MODEL_API_KEY: crypto.randomUUID(),
+    RUNNER_API_TOKEN: crypto.randomUUID(),
+    DEMO_ACCESS_CODE: crypto.randomUUID(),
+    SANDBOX: {
+      getByName: (name: string) =>
+        name.startsWith("demo:") ? visitor.sandbox : owner.sandbox,
+    },
+  };
+  const origin = "https://runner.test";
+  const cookie = sessionCookie(env, "demo").split(";")[0];
+  const path = origin + "/sandboxes/pi-same-id/session";
+  const call = (
+    url: string,
+    method: string,
+    headers: Record<string, string> = {},
+  ) => handler.fetch(new Request(url, { method, headers }), env);
+  assert.equal((await call(path, "DELETE", { origin })).status, 401);
+  assert.equal(
+    (await call(path, "DELETE", { cookie, origin: "https://evil.test" }))
+      .status,
+    403,
+  );
+  assert.equal((await call(path, "DELETE", { cookie, origin })).status, 200);
+  assert.equal(visitor.sandbox.isDeleted(), true);
+  assert.equal(owner.sandbox.isDeleted(), false);
+  assert.equal(owner.container.running, true);
+  assert.equal(
+    (await call(origin + "/sandboxes/pi-same-id/task", "GET", { cookie }))
+      .status,
+    410,
+  );
+  assert.equal(
+    (
+      await call(origin + "/sandboxes/pi-same-id/repository", "POST", {
+        cookie,
+        origin,
+      })
+    ).status,
+    410,
+  );
+  assert.equal((await call(path, "DELETE", { cookie, origin })).status, 200);
 });

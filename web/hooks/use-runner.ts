@@ -82,6 +82,9 @@ export function useRunner() {
   const [startingIds, setStartingIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const operations = useRef(new Set<string>());
   const sending = Boolean(selectedId && sendingIds.has(selectedId));
   const stopping = Boolean(selectedId && stoppingIds.has(selectedId));
@@ -248,6 +251,21 @@ export function useRunner() {
     setRevision((value) => value + 1);
     setNotice("");
   }, []);
+  const forgetSession = useCallback(
+    (id: string) => {
+      sessions.remove(id);
+      setRuns((items) => items.filter((run) => run.id !== id));
+      if (selectedRef.current === id) {
+        setSelectedId(null);
+        setConversation(null);
+        setLiveText(null);
+        setDiff("");
+        setProposal(null);
+        setNotice("");
+      }
+    },
+    [sessions.remove],
+  );
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -293,6 +311,14 @@ export function useRunner() {
     channel.current = instance;
     instance.onmessage = (event) => {
       if (
+        event.data?.deleted === true &&
+        event.data.scope === historyScope &&
+        typeof event.data.task === "string"
+      ) {
+        forgetSession(event.data.task);
+        return;
+      }
+      if (
         typeof event.data?.task === "string" &&
         runsRef.current.some((run) => run.id === event.data.task)
       )
@@ -304,7 +330,7 @@ export function useRunner() {
       instance.close();
       channel.current = null;
     };
-  }, [sessions.refresh]);
+  }, [sessions.refresh, historyScope, forgetSession]);
   const loadRepositories = useCallback(
     async (append = false, page = 1, ticket = catalogEpoch.current) => {
       setCatalogBusy(true);
@@ -910,6 +936,36 @@ export function useRunner() {
       }
     }
   };
+  const deleteSession = async (id: string) => {
+    const run = runsRef.current.find((item) => item.id === id);
+    if (!run || run.state === "cloning" || operations.current.has(id))
+      throw Error("Wait for the current session operation to finish.");
+    const epoch = authEpoch.current;
+    operations.current.add(id);
+    setDeletingIds((items) => new Set(items).add(id));
+    sessions.suspend(id);
+    try {
+      await request(`/sandboxes/${id}/session`, undefined, "DELETE");
+      if (epoch !== authEpoch.current) return;
+      forgetSession(id);
+      channel.current?.postMessage({
+        task: id,
+        deleted: true,
+        scope: historyScope,
+      });
+    } catch (error) {
+      if (epoch === authEpoch.current) void sessions.resume(id);
+      throw error;
+    } finally {
+      operations.current.delete(id);
+      if (epoch === authEpoch.current)
+        setDeletingIds((items) => {
+          const next = new Set(items);
+          next.delete(id);
+          return next;
+        });
+    }
+  };
   const stop = () => (selectedId ? stopSession(selectedId) : Promise.resolve());
   const publish = async (title: string, description: string) => {
     if (!selected) return;
@@ -945,6 +1001,8 @@ export function useRunner() {
     stoppingIds,
     sendingIds,
     stopSession,
+    deleteSession,
+    deletingIds,
     starting: busy,
     request,
     refresh: () => setRevision((value) => value + 1),
