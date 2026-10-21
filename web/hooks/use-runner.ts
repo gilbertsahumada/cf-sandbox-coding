@@ -1,4 +1,5 @@
-import { useSessionRuntime } from "./use-session-runtime";
+import { useSessionMonitor } from "./use-session-monitor";
+import type { SessionSnapshot } from "@/lib/session-monitor";
 import { runnerConfig, workspaceConfig } from "@/lib/config";
 import type {
   GitHubConnection,
@@ -28,6 +29,7 @@ function initialHistory(): Run[] {
   try {
     runs = historyForStorage(
       JSON.parse(localStorage.getItem(runnerConfig.historyStorageKey) || "[]"),
+      { preserveAll: true },
     );
   } catch {}
   runs = runs.map((run) =>
@@ -42,7 +44,7 @@ function initialHistory(): Run[] {
     ? [
         runs.find((run) => run.id === recovered.id) || recovered,
         ...runs.filter((run) => run.id !== recovered.id),
-      ].slice(0, runnerConfig.historyLimit)
+      ]
     : runs;
 }
 const message = (error: unknown) =>
@@ -65,8 +67,15 @@ export function useRunner() {
   const startLock = useRef(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  const [sendingIds, setSendingIds] = useState<ReadonlySet<string>>(new Set());
+  const [stoppingIds, setStoppingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const operations = useRef(new Set<string>());
+  const sending = Boolean(selectedId && sendingIds.has(selectedId));
+  const stopping = Boolean(selectedId && stoppingIds.has(selectedId));
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [liveText, setLiveText] = useState<string | null>(null);
   const [diff, setDiff] = useState("");
@@ -91,11 +100,7 @@ export function useRunner() {
   const [repositoryTotal, setRepositoryTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const rememberQueue = useRef(Promise.resolve()),
-    pendingMessage = useRef<{
-      task: string;
-      id: string;
-      prompt: string;
-    } | null>(null);
+    pendingMessages = useRef(new Map<string, { id: string; prompt: string }>());
   const channel = useRef<BroadcastChannel | null>(null);
   const observedTask = useRef<string | null>(null);
   const clearSession = useCallback(() => {
@@ -115,7 +120,10 @@ export function useRunner() {
     setStreamState("");
     activityRef.current?.replaceChildren();
     setActivityCount(0);
-    pendingMessage.current = null;
+    pendingMessages.current.clear();
+    operations.current.clear();
+    setSendingIds(new Set());
+    setStoppingIds(new Set());
   }, []);
   const request = useCallback(
     async (
@@ -168,6 +176,21 @@ export function useRunner() {
       ),
     [],
   );
+  const observed = useCallback(
+    (id: string, snapshot: SessionSnapshot) => {
+      const run = runsRef.current.find((item) => item.id === id);
+      if (!run || run.state === "cloning") return;
+      const state = snapshot.state === "none" ? "lost" : snapshot.state;
+      if (run.state === state) return;
+      updateRun(id, {
+        state,
+        finishedAt: isActive(state) ? undefined : run.finishedAt || Date.now(),
+      });
+      if (selectedRef.current === id) setRevision((value) => value + 1);
+    },
+    [updateRun],
+  );
+  const sessions = useSessionMonitor(runs, connected, request, observed);
   const activate = useCallback((id: string) => {
     if (selectedRef.current !== id) {
       // Do not render the previous task's transcript or proposal under a new ID.
@@ -186,10 +209,18 @@ export function useRunner() {
     try {
       localStorage.setItem(
         runnerConfig.historyStorageKey,
-        JSON.stringify(historyForStorage(runs)),
+        JSON.stringify(
+          historyForStorage(runs, {
+            retainedIds: runs
+              .filter(
+                (run) => sessions.snapshots[run.id]?.containerRunning !== false,
+              )
+              .map((run) => run.id),
+          }),
+        ),
       );
     } catch {}
-  }, [runs]);
+  }, [runs, sessions.snapshots]);
   useEffect(() => {
     const url = new URL(location.href);
     if (selectedId) url.searchParams.set("task", selectedId);
@@ -216,6 +247,11 @@ export function useRunner() {
     const instance = new BroadcastChannel(runnerConfig.updateChannelName);
     channel.current = instance;
     instance.onmessage = (event) => {
+      if (
+        typeof event.data?.task === "string" &&
+        runsRef.current.some((run) => run.id === event.data.task)
+      )
+        void sessions.refresh([event.data.task]);
       if (selectedRef.current === event.data?.task)
         setRevision((value) => value + 1);
     };
@@ -223,7 +259,7 @@ export function useRunner() {
       instance.close();
       channel.current = null;
     };
-  }, []);
+  }, [sessions.refresh]);
   const loadRepositories = useCallback(
     async (append = false, page = 1, ticket = catalogEpoch.current) => {
       setCatalogBusy(true);
@@ -612,8 +648,8 @@ export function useRunner() {
       setAuthOpen(true);
       throw Error("Sign in to your workspace to get started.");
     }
-    if (startLock.current || busy || runs.some((run) => isActive(run.state)))
-      throw Error("A task is already running. Open it to continue working.");
+    if (startLock.current || busy)
+      throw Error("Wait for the new session to finish preparing.");
     if (!repo && !example) throw Error("Choose a GitHub repository.");
     const run: Run = {
       id: `${agent}-${crypto.randomUUID()}`,
@@ -639,7 +675,7 @@ export function useRunner() {
     setLiveText(null);
     setDiff("");
     setProposal(null);
-    setRuns((items) => [run, ...items].slice(0, runnerConfig.historyLimit));
+    setRuns((items) => [run, ...items]);
     setSelectedId(run.id);
     setNotice("");
     try {
@@ -667,7 +703,8 @@ export function useRunner() {
         throw new DOMException("Session changed", "AbortError");
       setStartup(null);
       updateRun(run.id, { state: "running" });
-      setRevision((value) => value + 1);
+      channel.current?.postMessage({ task: run.id });
+      if (selectedRef.current === run.id) setRevision((value) => value + 1);
     } catch (error) {
       if (epoch === authEpoch.current) {
         updateRun(run.id, { state: "failed", finishedAt: Date.now() });
@@ -685,59 +722,79 @@ export function useRunner() {
       !selected ||
       !conversation?.canContinue ||
       isActive(selected.state) ||
-      sending
+      operations.current.has(selected.id)
     )
       throw Error(
-        "Wait for the agent to finish before sending another message.",
+        "Wait for this session to finish before sending another message.",
       );
     const run = selected;
-    // Keep the same message ID when retrying an ambiguous HTTP failure.
-    if (
-      !pendingMessage.current ||
-      pendingMessage.current.task !== run.id ||
-      pendingMessage.current.prompt !== prompt
-    )
-      pendingMessage.current = {
-        task: run.id,
-        id: crypto.randomUUID(),
-        prompt,
-      };
-    setSending(true);
+    const epoch = authEpoch.current;
+    let pending = pendingMessages.current.get(run.id);
+    // Preserve a separate idempotency key for each session's ambiguous HTTP retry.
+    if (!pending || pending.prompt !== prompt) {
+      pending = { id: crypto.randomUUID(), prompt };
+      pendingMessages.current.set(run.id, pending);
+    }
+    operations.current.add(run.id);
+    setSendingIds((items) => new Set(items).add(run.id));
+    sessions.suspend(run.id);
     try {
       await request(`/sandboxes/${run.id}/messages`, {
-        id: pendingMessage.current.id,
+        id: pending.id,
         prompt,
       });
-      pendingMessage.current = null;
+      if (epoch !== authEpoch.current) return;
+      pendingMessages.current.delete(run.id);
       updateRun(run.id, { state: "running", finishedAt: undefined });
       channel.current?.postMessage({ task: run.id });
       if (selectedRef.current === run.id) setRevision((value) => value + 1);
     } finally {
-      setSending(false);
+      operations.current.delete(run.id);
+      if (epoch === authEpoch.current) {
+        setSendingIds((items) => {
+          const next = new Set(items);
+          next.delete(run.id);
+          return next;
+        });
+        void sessions.resume(run.id);
+      }
     }
   };
-  const stop = async () => {
-    if (!selected || stopping) return;
-    const id = selected.id;
-    setStopping(true);
-    const active = isActive(selected.state);
+  const stopSession = async (id: string) => {
+    const run = runsRef.current.find((item) => item.id === id);
+    if (!run || run.state === "cloning" || operations.current.has(id)) return;
+    const epoch = authEpoch.current;
+    operations.current.add(id);
+    setStoppingIds((items) => new Set(items).add(id));
+    sessions.suspend(id);
+    const active = isActive(run.state);
     if (active) updateRun(id, { state: "stopping" });
     try {
       const result: StopResult = await (
         await request(`/sandboxes/${id}/task`, undefined, "DELETE")
       ).json();
+      if (epoch !== authEpoch.current) return;
       updateRun(id, {
         state: result.state,
-        finishedAt: active ? Date.now() : selected.finishedAt,
+        finishedAt: active ? Date.now() : run.finishedAt,
       });
       channel.current?.postMessage({ task: id });
     } catch (error) {
-      report(error);
+      if (epoch === authEpoch.current) report(error);
     } finally {
-      setStopping(false);
-      if (selectedRef.current === id) setRevision((value) => value + 1);
+      operations.current.delete(id);
+      if (epoch === authEpoch.current) {
+        setStoppingIds((items) => {
+          const next = new Set(items);
+          next.delete(id);
+          return next;
+        });
+        if (selectedRef.current === id) setRevision((value) => value + 1);
+        void sessions.resume(id);
+      }
     }
   };
+  const stop = () => (selectedId ? stopSession(selectedId) : Promise.resolve());
   const publish = async (title: string, description: string) => {
     if (!selected) return;
     const id = selected.id;
@@ -747,13 +804,23 @@ export function useRunner() {
     ).json();
     if (selectedRef.current === id) setProposal(info);
   };
-  const runtime = useSessionRuntime(
-    connected && selected?.state !== "cloning" ? selectedId : null,
-    revision,
-    request,
-  );
+  const runtime = {
+    running: selectedId
+      ? (sessions.snapshots[selectedId]?.containerRunning ?? null)
+      : null,
+    checkedAt: selectedId
+      ? (sessions.snapshots[selectedId]?.checkedAt ?? null)
+      : null,
+    checking: Boolean(selectedId && sessions.checking.has(selectedId)),
+    refresh: () => sessions.refresh(selectedId ? [selectedId] : []),
+  };
   return {
     runtime,
+    sessions,
+    stoppingIds,
+    sendingIds,
+    stopSession,
+    starting: busy,
     request,
     refresh: () => setRevision((value) => value + 1),
     runs,
@@ -765,7 +832,7 @@ export function useRunner() {
     notice,
     startup,
     setNotice,
-    busy,
+    busy: busy && startup?.task === selectedId,
     sending,
     stopping,
     conversation,
@@ -796,7 +863,6 @@ export function useRunner() {
     stop,
     publish,
     report,
-    hasActiveRun: runs.some((run) => isActive(run.state)),
   };
 }
 export type Runner = ReturnType<typeof useRunner>;

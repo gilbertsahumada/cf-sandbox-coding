@@ -2,7 +2,7 @@
 
 Run **Pi or OpenCode in Cloudflare Sandbox**, with an OpenAI-compatible model provider of your choice. The browser manages conversations, repository files, live tool activity, cumulative changes, and draft pull requests. AI Gateway is not required.
 
-This is a **single-operator runner**, not a multi-user service. Everyone with the runner access token shares access to its tasks and connected repositories. The interface currently allows one active task at a time per browser; it does not schedule concurrent agents.
+This is a **single-operator runner**, not a multi-user service. Everyone with the runner access token shares access to its tasks and connected repositories. Different sessions can run concurrently in isolated sandboxes. Each session accepts one agent turn at a time; new-session preparation is serialized in the browser.
 
 ## Start a conversation
 
@@ -14,9 +14,9 @@ This is a **single-operator runner**, not a multi-user service. Everyone with th
 
 Changing selectors or opening a new chat does not start an agent. Repository search filters the loaded catalog; **Load more** retrieves additional entries. The selected repository is remembered on the server after access validation.
 
-A `/?task=ID` link reopens a known task after authentication; `/?new=1` opens an empty chat. Recent sessions are the last 12 tasks known to the current browser, not an account-wide server list. Closing a tab or signing out does **not** stop running work: use **Stop**.
+A `/?task=ID` link reopens a known task after authentication; `/?new=1` opens an empty chat. Overview tracks sessions known to the current browser, not an account-wide server list. Browser history keeps the 12 most recent sessions plus running or unverified sessions so starting more work does not lose their references. Closing a tab or signing out does **not** stop running work: use **Stop**.
 
-The session header separately shows whether the cloud workspace is running or stopped. **Stop session** is available even while the agent is idle; it stops the container while preserving the completed task and its saved context. Status is checked on opening/focusing the session, every 30 seconds while the page is visible, or with the refresh button. An unavailable status is shown explicitly. Continuing can restore a stopped session when its current checkpoint is available.
+Overview and the session header separately show whether the agent is working and whether its cloud workspace is running or stopped. Use the Running filter to find active agents and idle workspaces, and stop any session directly from Overview without opening its chat. **Stop session** is available even while the agent is idle; it stops the container while preserving the completed task and its saved context. Status is checked on opening/focusing the page, every 10 seconds while the page is visible, or with the Overview refresh button. Status requests are bounded to three at a time and do not download background tool logs. An unavailable status is shown explicitly. Continuing can restore a stopped session when its current checkpoint is available.
 
 After a turn finishes, the chat shows a change summary with **Review changes** and **Create PR**. Publication opens the review form; an existing proposal offers **View PR**. Creation is blocked while the agent runs, when file edits are unsaved, or when publication requirements are not met.
 
@@ -48,7 +48,7 @@ npm run dev:ui         # Vite UI with hot reload; needs the Worker on :8787.
 npm run preview:editor # Simulated UI on :8795; no Cloudflare or model calls.
 ```
 
-The fixture preview uses `fixture-runner-token` if you test signing out and back in. Run it with `--slow`, `--slow-start`, or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
+The fixture preview uses `fixture-runner-token` if you test signing out and back in. Run it with `--slow`, `--slow-start`, `--long-running` (two-minute simulated turns), or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
 
 ## Validate and deploy
 

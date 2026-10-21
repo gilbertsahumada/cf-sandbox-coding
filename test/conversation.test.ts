@@ -724,3 +724,73 @@ test("runtime status distinguishes a completed turn from a stopped container wit
   assert.equal(f.container.running, false);
   assert.equal((await f.sandbox.conversation()).canContinue, true);
 });
+
+test("Overview status omits archived output and never boots a stopped workspace", async () => {
+  const f = fixture();
+  await f.sandbox.startTask("First", "pi");
+  f.complete("Confidential response");
+  assert.deepEqual(await f.sandbox.sessionStatus(), {
+    state: "succeeded",
+    containerRunning: true,
+  });
+  await f.sandbox.stopTask();
+  const before = f.spawns;
+  assert.deepEqual(await f.sandbox.sessionStatus(), {
+    state: "succeeded",
+    containerRunning: false,
+  });
+  assert.equal(f.spawns, before);
+});
+
+test("independent sandbox sessions can run together and stop independently", async () => {
+  const a = fixture();
+  const b = fixture();
+  await Promise.all([
+    a.sandbox.startTask("First", "pi"),
+    b.sandbox.startTask("Second", "opencode"),
+  ]);
+  assert.equal((await a.sandbox.sessionStatus()).state, "running");
+  assert.equal((await b.sandbox.sessionStatus()).state, "running");
+  await a.sandbox.stopTask();
+  assert.equal((await a.sandbox.sessionStatus()).containerRunning, false);
+  assert.deepEqual(await b.sandbox.sessionStatus(), {
+    state: "running",
+    containerRunning: true,
+  });
+});
+
+test("lightweight runtime routing remains authenticated and never returns full task output", async () => {
+  let statusReads = 0;
+  const env = {
+    ...config,
+    MODEL_API_KEY: crypto.randomUUID(),
+    RUNNER_API_TOKEN: crypto.randomUUID(),
+    SANDBOX: {
+      getByName: () => ({
+        sessionStatus: async () => {
+          statusReads++;
+          return { state: "running", containerRunning: true };
+        },
+        executionStatus: async () => {
+          throw Error("Overview must not request archived output");
+        },
+      }),
+    },
+  };
+  const url = "https://runner.test/sandboxes/pi-monitor/task?runtime=1";
+  assert.equal((await handler.fetch(new Request(url), env)).status, 401);
+  assert.equal(statusReads, 0);
+  const response = await handler.fetch(
+    new Request(url, {
+      headers: { authorization: `Bearer ${env.RUNNER_API_TOKEN}` },
+    }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    state: "running",
+    containerRunning: true,
+  });
+  assert.equal(statusReads, 1);
+});

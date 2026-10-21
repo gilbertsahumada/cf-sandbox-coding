@@ -5,6 +5,7 @@ import { extname, resolve } from "node:path";
 // Local UI fixture only: no Cloudflare, GitHub or model requests.
 const root = resolve("dist/ui");
 const port = Number(process.env.PREVIEW_PORT || 8795);
+const longRunning = process.argv.includes("--long-running");
 const slow = process.argv.includes("--slow");
 const slowStart = process.argv.includes("--slow-start");
 const failStart = process.argv.includes("--fail-start");
@@ -313,7 +314,10 @@ createServer(async (req, res) => {
         state: "running",
         startedAt: Date.now(),
       });
-      task.timer = setTimeout(() => finish(task), slow ? 8000 : 1300);
+      task.timer = setTimeout(
+        () => finish(task),
+        longRunning ? 120000 : slow ? 8000 : 1300,
+      );
       return json({ state: "started" }, 202);
     }
     if (resource === "task" && req.method === "DELETE") {
@@ -332,7 +336,9 @@ createServer(async (req, res) => {
       return json({
         state: task.state,
         containerRunning: task.containerRunning,
-        result: task.turns.at(-1)?.response,
+        ...(url.searchParams.get("runtime") === "1"
+          ? {}
+          : { result: task.turns.at(-1)?.response }),
       });
     if (resource === "messages" && req.method === "POST") {
       let body = "";
@@ -350,7 +356,10 @@ createServer(async (req, res) => {
           state: "running",
           startedAt: Date.now(),
         });
-        task.timer = setTimeout(() => finish(task), slow ? 8000 : 1600);
+        task.timer = setTimeout(
+          () => finish(task),
+          longRunning ? 120000 : slow ? 8000 : 1600,
+        );
       }
       return json({ turn: task.turns.length }, 202);
     }

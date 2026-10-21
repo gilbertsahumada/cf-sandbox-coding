@@ -170,8 +170,7 @@ export function NewConversation({
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const canSend =
     Boolean(prompt.trim()) &&
-    !runner.busy &&
-    !runner.hasActiveRun &&
+    !runner.starting &&
     Boolean(runner.repository || example);
   useEffect(() => {
     if (active) messageRef.current?.focus({ preventScroll: true });
@@ -214,7 +213,7 @@ export function NewConversation({
                 onChange={(event) => setPrompt(event.target.value)}
                 rows={3}
                 maxLength={workspaceConfig.maxPromptLength}
-                disabled={runner.busy}
+                disabled={runner.starting}
                 placeholder="Describe a change, ask a question, or plan your next task…"
                 onKeyDown={(event) => {
                   if (
@@ -246,9 +245,13 @@ export function NewConversation({
                   size="icon-sm"
                   disabled={!canSend}
                   aria-label="Send first message"
-                  aria-busy={runner.busy}
+                  aria-busy={runner.starting}
                 >
-                  {runner.busy ? <Spinner aria-hidden="true" /> : <ArrowUp />}
+                  {runner.starting ? (
+                    <Spinner aria-hidden="true" />
+                  ) : (
+                    <ArrowUp />
+                  )}
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
@@ -257,11 +260,9 @@ export function NewConversation({
         </FieldGroup>
       </form>
       <p className="new-conversation-hint">
-        {runner.hasActiveRun
-          ? "A task is running. Open it in Overview to continue or stop it before sending."
-          : !runner.repository && !example
-            ? "Choose a repository before sending your first message."
-            : `${agentNames[agent]} · ${workspaceConfig.modelLabel}${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
+        {!runner.repository && !example
+          ? "Choose a repository before sending your first message."
+          : `${agentNames[agent]} · ${workspaceConfig.modelLabel}${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
       </p>
     </div>
   );
