@@ -1,3 +1,4 @@
+import { ChatCompletion } from "@/components/chat-completion";
 import { workspaceConfig } from "@/lib/config";
 import {
   SessionNavigation,
@@ -5,6 +6,7 @@ import {
   SessionDetails,
   type SessionView,
 } from "@/components/session-navigation";
+import { fileStatusNames } from "@/lib/editor";
 import { sessionTitle, repositoryLabel } from "@/lib/session-presentation";
 import { startupText } from "@/lib/session-start";
 import {
@@ -27,7 +29,6 @@ import {
   Eye,
   LogIn,
   LogOut,
-  UserRound,
   Cpu,
   Radio,
   ChevronsDown,
@@ -448,7 +449,11 @@ function Workspace({
                 >
                   <FileIcon path={item.path} data-icon="inline-start" />
                   {item.path.split("/").at(-1)}
-                  <span className={cn("file-status", `status-${item.status}`)}>
+                  <span
+                    className={cn("file-status", `status-${item.status}`)}
+                    aria-label={fileStatusNames[item.status]}
+                    title={fileStatusNames[item.status]}
+                  >
                     {item.status}
                   </span>
                 </TabsTrigger>
@@ -554,16 +559,24 @@ function AgentChat({
   newSession,
   drafts,
   showTools,
+  files,
+  review,
+  publish,
 }: {
   runner: Runner;
   workspace: RepositoryWorkspace;
   newSession: () => void;
   drafts: RefObject<Record<string, string>>;
   showTools: () => void;
+  files: ChangedFile[];
+  review: () => void;
+  publish: () => void;
 }) {
   const draftKey = runner.selected?.id || "new";
   const [draft, setDraft] = useState(() => drafts.current[draftKey] || ""),
     [error, setError] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const followResponse = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null),
     formRef = useRef<HTMLFormElement>(null),
     lastTurn = useRef(-1);
@@ -587,13 +600,25 @@ function AgentChat({
     const node = scrollRef.current;
     if (!node) return;
     const next = chat?.turn || 0;
+    if (next !== lastTurn.current) followResponse.current = true;
     if (
       next !== lastTurn.current ||
       node.scrollHeight - node.scrollTop - node.clientHeight < 180
     )
       node.scrollTop = node.scrollHeight;
     lastTurn.current = next;
-  }, [chat, runner.liveText]);
+  }, [chat, runner.liveText, runner.proposal, runner.loadingDiff]);
+  useEffect(() => {
+    const content = contentRef.current;
+    const scroll = scrollRef.current;
+    if (!content || !scroll) return;
+    // Markdown loads lazily; follow its final height without pulling readers away from history.
+    const observer = new ResizeObserver(() => {
+      if (followResponse.current) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft.trim()) return;
@@ -619,82 +644,101 @@ function AgentChat({
         ref={scrollRef}
         tabIndex={0}
         aria-label="Conversation messages"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          followResponse.current =
+            node.scrollHeight - node.scrollTop - node.clientHeight < 180;
+        }}
       >
-        {!startup &&
-        (runner.loadingTask || (runner.checking && runner.selected)) ? (
-          <div className="flex flex-col gap-4 p-4">
-            <Skeleton className="h-12 w-4/5 self-end" />
-            <Skeleton className="h-24 w-full" />
-            <span className="text-xs text-muted-foreground">
-              Restoring conversation…
-            </span>
-          </div>
-        ) : turns.length ? (
-          turns.map((turn, index) => (
-            <div className="chat-turn" key={turn.id}>
-              {turn.number > 0 ? (
-                <article className="chat-user">
-                  <div className="message-label">
-                    <UserRound className="size-3" aria-hidden="true" />
-                    You<span>Message {turn.number}</span>
-                  </div>
-                  <p>{turn.prompt}</p>
-                </article>
-              ) : null}
-              <article className="chat-assistant">
-                <div className="assistant-label">
-                  <span className="agent-mark">
-                    <AgentLogo agent={runner.selected?.agent || "pi"} />
-                  </span>
-                  <strong>{agentNames[runner.selected?.agent || "pi"]}</strong>
-                  {index === turns.length - 1 && active ? (
-                    <span className="assistant-working">
-                      <Spinner aria-hidden="true" />
-                      {startup ? "Preparing" : "Working"}
-                    </span>
-                  ) : null}
-                </div>
-                <AgentResponse
-                  text={
-                    index === turns.length - 1 && runner.liveText !== null
-                      ? runner.liveText || "Thinking…"
-                      : turn.response ||
-                        (active
-                          ? "Reviewing your instructions and the repository…"
-                          : "No saved response.")
-                  }
-                />
-              </article>
+        <div className="conversation-content" ref={contentRef}>
+          {!startup &&
+          (runner.loadingTask || (runner.checking && runner.selected)) ? (
+            <div className="flex flex-col gap-4 p-4">
+              <Skeleton className="h-12 w-4/5 self-end" />
+              <Skeleton className="h-24 w-full" />
+              <span className="text-xs text-muted-foreground">
+                Restoring conversation…
+              </span>
             </div>
-          ))
-        ) : (
-          <Empty className="chat-empty">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <MessageSquare />
-              </EmptyMedia>
-              <EmptyTitle>
-                {runner.selected
-                  ? "Restore your conversation"
-                  : "Start working"}
-              </EmptyTitle>
-              <EmptyDescription>
-                {runner.selected
-                  ? chat?.reason ||
-                    "Your task messages and responses will appear here."
-                  : "Describe a task, reply to the agent, and keep working on the same files."}
-              </EmptyDescription>
-            </EmptyHeader>
-            {!runner.selected ? (
-              <EmptyContent>
-                <Button variant="ghost" onClick={newSession}>
-                  New chat
-                  <ChevronRight data-icon="inline-end" />
-                </Button>
-              </EmptyContent>
-            ) : null}
-          </Empty>
-        )}
+          ) : turns.length ? (
+            turns.map((turn, index) => (
+              <div className="chat-turn" key={turn.id}>
+                {turn.number > 0 ? (
+                  <article className="chat-user">
+                    <div className="message-label">
+                      You<span className="sr-only">Message {turn.number}</span>
+                    </div>
+                    <p>{turn.prompt}</p>
+                  </article>
+                ) : null}
+                <article className="chat-assistant">
+                  <div className="assistant-label">
+                    <span className="agent-mark">
+                      <AgentLogo agent={runner.selected?.agent || "pi"} />
+                    </span>
+                    <strong>
+                      {agentNames[runner.selected?.agent || "pi"]}
+                    </strong>
+                    {index === turns.length - 1 && active ? (
+                      <span className="assistant-working">
+                        <Spinner aria-hidden="true" />
+                        {startup ? "Preparing" : "Working"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <AgentResponse
+                    text={
+                      index === turns.length - 1 && runner.liveText !== null
+                        ? runner.liveText || "Thinking…"
+                        : turn.response ||
+                          (active
+                            ? "Reviewing your instructions and the repository…"
+                            : "No saved response.")
+                    }
+                  />
+                </article>
+              </div>
+            ))
+          ) : (
+            <Empty className="chat-empty">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <MessageSquare />
+                </EmptyMedia>
+                <EmptyTitle>
+                  {runner.selected
+                    ? "Restore your conversation"
+                    : "Start working"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {runner.selected
+                    ? chat?.reason ||
+                      "Your task messages and responses will appear here."
+                    : "Describe a task, reply to the agent, and keep working on the same files."}
+                </EmptyDescription>
+              </EmptyHeader>
+              {!runner.selected ? (
+                <EmptyContent>
+                  <Button variant="ghost" onClick={newSession}>
+                    New chat
+                    <ChevronRight data-icon="inline-end" />
+                  </Button>
+                </EmptyContent>
+              ) : null}
+            </Empty>
+          )}
+          {runner.selected && turns.length > 0 && !runner.loadingTask ? (
+            <ChatCompletion
+              state={runner.selected.state}
+              changeCount={files.length}
+              proposal={runner.proposal}
+              loading={runner.loadingDiff}
+              hasUnsavedEdits={workspace.hasDirty || workspace.hasSaving}
+              onReview={review}
+              onPublish={publish}
+            />
+          ) : null}
+        </div>
       </div>
       {runner.selected ? (
         <Button
@@ -1117,8 +1161,9 @@ export default function App() {
               <div className="session-header-actions">
                 {runner.selected && isActive(runner.selected.state) ? (
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
+                    aria-busy={runner.stopping}
                     disabled={runner.busy || runner.stopping}
                     onClick={() => void runner.stop()}
                   >
@@ -1205,6 +1250,13 @@ export default function App() {
                 drafts={drafts}
                 workspace={workspace}
                 showTools={() => setView("tools")}
+                files={files}
+                review={() => {
+                  workspace.setMode("changes");
+                  setDetailsVisible(false);
+                  setView("review");
+                }}
+                publish={() => setPublishOpen(true)}
               />
             </div>
             <div className="surface-review" hidden={view !== "review"}>

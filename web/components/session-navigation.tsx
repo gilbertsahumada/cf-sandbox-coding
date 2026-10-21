@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { Runner } from "@/hooks/use-runner";
 import type { ChangedFile } from "@/lib/editor";
-import { githubPullRequestURL } from "@/lib/editor";
+import { fileStatusNames, githubPullRequestURL } from "@/lib/editor";
 import {
   matchesSession,
   relativeTime,
@@ -418,6 +418,13 @@ export function SessionDetails({
                     title={file.path}
                   >
                     <FileIcon path={file.path} data-icon="inline-start" />
+                    <span
+                      className={`file-status status-${file.status}`}
+                      aria-label={fileStatusNames[file.status]}
+                      title={fileStatusNames[file.status]}
+                    >
+                      {file.status}
+                    </span>
                     <span className="truncate">{file.path}</span>
                     <small className="diff-added">+{file.added}</small>
                     <small className="diff-removed">−{file.removed}</small>

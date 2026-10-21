@@ -12,6 +12,13 @@ export type ChangedFile = {
   status: "A" | "D" | "M" | "R";
   lines: DiffLine[];
 };
+export const fileStatusNames = {
+  A: "Added",
+  D: "Deleted",
+  M: "Modified",
+  R: "Renamed",
+} as const satisfies Record<ChangedFile["status"], string>;
+
 function gitPath(value: string, prefixed = true) {
   if (value.startsWith('"') && value.endsWith('"')) {
     const raw = value.slice(1, -1),
