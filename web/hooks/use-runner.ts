@@ -1,3 +1,8 @@
+import {
+  createAgentTimeline,
+  retainTimelines,
+  type TimelineSnapshot,
+} from "@/lib/agent-timeline";
 import { useSessionMonitor } from "./use-session-monitor";
 import type { SessionSnapshot } from "@/lib/session-monitor";
 import { runnerConfig, workspaceConfig } from "@/lib/config";
@@ -92,6 +97,10 @@ export function useRunner() {
   runsRef.current = runs;
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [liveText, setLiveText] = useState<string | null>(null);
+  const [timelineTurns, setTimelineTurns] = useState<
+    Record<number, TimelineSnapshot>
+  >({});
+  const timelineTask = useRef<string | null>(null);
   const [diff, setDiff] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [streamState, setStreamState] = useState<StreamState>("");
@@ -129,6 +138,7 @@ export function useRunner() {
     setConversation(null);
     setStartup(null);
     setLiveText(null);
+    setTimelineTurns({});
     setDiff("");
     setProposal(null);
     setGithub(null);
@@ -454,6 +464,10 @@ export function useRunner() {
       setDiff("");
     }
     observedTask.current = selectedId;
+    if (timelineTask.current !== selectedId || !connected) {
+      timelineTask.current = selectedId;
+      setTimelineTurns({});
+    }
     setProposal(null);
     setLiveText(null);
     setStreamState("");
@@ -480,6 +494,13 @@ export function useRunner() {
     setLoadingDiff(true);
     setStreamState("Connecting");
     const transcript = assistantStream(setLiveText);
+    let timelineTurn = 0;
+    const timeline = createAgentTimeline((snapshot) => {
+      if (current)
+        setTimelineTurns((turns) =>
+          retainTimelines(turns, timelineTurn, snapshot),
+        );
+    });
     const activity = (archived = false) =>
       activityRef.current
         ? createActivity(
@@ -583,6 +604,7 @@ export function useRunner() {
       const info = await freshConversation();
       if (!current) return;
       setLoadingTask(false);
+      timelineTurn = info.turn;
       let finalized = false;
       const finalize = () => {
         if (!current || finalized) return;
@@ -633,6 +655,7 @@ export function useRunner() {
       source.addEventListener("reset", () => {
         if (current) {
           transcript.reset();
+          timeline.reset(true);
           view = activity(true);
         }
       });
@@ -640,6 +663,7 @@ export function useRunner() {
         if (current) {
           const text = JSON.parse(event.data);
           transcript.push(text);
+          timeline.push(text);
           if (view?.stdout(text) && !terminal) queueDiff();
         }
       });
@@ -685,6 +709,7 @@ export function useRunner() {
       source.addEventListener("done", () => {
         source?.close();
         view?.finish();
+        if (current) timeline.finish();
         finalize();
       });
       source.onerror = () => {
@@ -1020,6 +1045,7 @@ export function useRunner() {
     stopping,
     conversation,
     liveText,
+    timelineTurns: timelineTask.current === selectedId ? timelineTurns : {},
     diff,
     proposal,
     streamState,

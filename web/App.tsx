@@ -1,3 +1,6 @@
+import { AgentTimeline } from "@/components/agent-timeline";
+import { ChatLogs } from "@/components/chat-logs";
+import { currentActivity } from "@/lib/agent-timeline";
 import { SessionRuntimeControl } from "@/components/session-runtime-control";
 import { ChatCompletion } from "@/components/chat-completion";
 import { workspaceConfig } from "@/lib/config";
@@ -12,9 +15,8 @@ import { sessionTitle, repositoryLabel } from "@/lib/session-presentation";
 import { startupText } from "@/lib/session-start";
 import {
   memo,
-  lazy,
-  Suspense,
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -24,26 +26,19 @@ import {
 import {
   ArrowUp,
   ArrowUpRight,
-  ChevronDown,
   ChevronRight,
   CircleHelp,
   Eye,
   LogIn,
   LogOut,
   Cpu,
-  Radio,
-  ChevronsDown,
-  Pause,
-  Check,
   Code2,
-  CircleAlert,
   Download,
   FileDiff,
   Files,
   GitBranch,
   GitPullRequest,
   MessageSquare,
-  PanelBottom,
   Plus,
   Settings2,
   Square,
@@ -79,11 +74,6 @@ import {
 } from "@/components/ui/empty";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { FileIcon, TaskStateIcon } from "@/components/workspace-indicators";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -109,28 +99,18 @@ import {
   type ChangedFile,
 } from "@/lib/editor";
 import { agentNames, isActive, stateNames } from "@/lib/types";
-const MarkdownResponse = lazy(() =>
-  import("@/components/markdown-response").then((module) => ({
-    default: module.MarkdownResponse,
-  })),
-);
-function AgentResponse({ text }: { text: string }) {
-  return (
-    <Suspense fallback={<p className="editor-hint">Loading response…</p>}>
-      <MarkdownResponse text={text} />
-    </Suspense>
-  );
-}
 function IconButton({
   icon: Icon,
   label,
   onClick,
   pressed,
+  disabled,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
   pressed?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Tooltip>
@@ -140,6 +120,7 @@ function IconButton({
           size="icon-sm"
           aria-label={label}
           aria-pressed={pressed}
+          disabled={disabled}
           onClick={onClick}
         >
           <Icon />
@@ -178,147 +159,6 @@ const DiffPane = memo(function DiffPane({ file }: { file: ChangedFile }) {
     </div>
   );
 });
-function ActivityPanel({
-  runner,
-  expanded,
-  toggle,
-}: {
-  runner: Runner;
-  expanded: boolean;
-  toggle: () => void;
-}) {
-  const [follow, setFollow] = useState(true);
-  const [activityTab, setActivityTab] = useState("tools");
-  const responseRef = useRef<HTMLDivElement>(null);
-  const startup =
-    runner.startup?.task === runner.selected?.id ? runner.startup : null;
-  const response = startup
-    ? startupText(startup)
-    : (runner.liveText ?? runner.conversation?.turns.at(-1)?.response ?? "");
-  useEffect(() => {
-    if (
-      follow &&
-      runner.selected &&
-      isActive(runner.selected.state) &&
-      responseRef.current
-    )
-      responseRef.current.scrollTop = responseRef.current.scrollHeight;
-  }, [response, follow, activityTab, runner.selected?.state]);
-  return (
-    <Tabs
-      value={activityTab}
-      onValueChange={setActivityTab}
-      className="activity-root"
-    >
-      <Collapsible open={expanded} onOpenChange={toggle} asChild>
-        <section
-          className={cn("activity-panel", !expanded && "collapsed")}
-          aria-label="Tool activity"
-        >
-          <div className="panel-heading">
-            <span className="activity-heading">
-              <SquareTerminal className="size-3.5" />
-
-              <TabsList variant="line" aria-label="Activity view">
-                <TabsTrigger value="tools">
-                  Tools<Badge variant="secondary">{runner.activityCount}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="response">Response</TabsTrigger>
-              </TabsList>
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="stream-label" role="status">
-                {["Connecting", "Reconnecting"].includes(runner.streamState) ? (
-                  <Spinner aria-hidden="true" />
-                ) : runner.streamState === "Saved" ? (
-                  <Check aria-hidden="true" />
-                ) : runner.streamState === "Live" ? (
-                  <Radio aria-hidden="true" />
-                ) : null}
-                {startup
-                  ? startup.stage === "failed"
-                    ? "Preparation failed"
-                    : "Preparing"
-                  : runner.streamState || "No activity"}
-              </span>
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-pressed={follow}
-                onClick={() => {
-                  setFollow((value) => !value);
-                  runner.followRef.current = !follow;
-                }}
-              >
-                {follow ? (
-                  <ChevronsDown data-icon="inline-start" />
-                ) : (
-                  <Pause data-icon="inline-start" />
-                )}
-                {follow ? "Following" : "Paused"}
-              </Button>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={expanded ? "Hide activity" : "Show activity"}
-                >
-                  {expanded ? <ChevronDown /> : <PanelBottom />}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </div>
-          <CollapsibleContent
-            forceMount
-            className="activity-scroll"
-            inert={!expanded}
-            aria-hidden={!expanded}
-          >
-            <TabsContent
-              value="tools"
-              forceMount
-              hidden={activityTab !== "tools"}
-              className="activity-content"
-            >
-              {startup ? (
-                <div className="startup-progress" role="status">
-                  {startup.stage !== "failed" ? (
-                    <Spinner aria-hidden="true" />
-                  ) : (
-                    <CircleAlert aria-hidden="true" />
-                  )}
-                  <span>{startupText(startup)}</span>
-                </div>
-              ) : null}
-
-              <div
-                className="activity-output"
-                ref={runner.activityRef}
-                tabIndex={0}
-                aria-label="Execution logs"
-              />
-            </TabsContent>
-            {activityTab === "response" ? (
-              <TabsContent
-                value="response"
-                className="activity-response"
-                ref={responseRef}
-              >
-                {response ? (
-                  <AgentResponse text={response} />
-                ) : (
-                  <p className="editor-hint">
-                    The agent response will appear here.
-                  </p>
-                )}
-              </TabsContent>
-            ) : null}
-          </CollapsibleContent>
-        </section>
-      </Collapsible>
-    </Tabs>
-  );
-}
 function Workspace({
   runner,
   files,
@@ -575,7 +415,6 @@ function AgentChat({
   workspace,
   newSession,
   drafts,
-  showTools,
   files,
   review,
   publish,
@@ -584,7 +423,6 @@ function AgentChat({
   workspace: RepositoryWorkspace;
   newSession: () => void;
   drafts: RefObject<Record<string, string>>;
-  showTools: () => void;
   files: ChangedFile[];
   review: () => void;
   publish: () => void;
@@ -597,6 +435,9 @@ function AgentChat({
   const scrollRef = useRef<HTMLDivElement>(null),
     formRef = useRef<HTMLFormElement>(null),
     lastTurn = useRef(-1);
+  const pauseFollowing = useCallback(() => {
+    followResponse.current = false;
+  }, []);
   const active = runner.selected ? isActive(runner.selected.state) : false;
   const startup =
     runner.startup?.task === runner.selected?.id ? runner.startup : null;
@@ -699,14 +540,22 @@ function AgentChat({
                     {index === turns.length - 1 && active ? (
                       <span className="assistant-working">
                         <Spinner aria-hidden="true" />
-                        {startup ? "Preparing" : "Working"}
+                        {startup
+                          ? "Preparing"
+                          : currentActivity(
+                              runner.timelineTurns[turn.number]?.items || [],
+                            )}
                       </span>
                     ) : null}
                   </div>
-                  <AgentResponse
-                    text={
+                  <AgentTimeline
+                    snapshot={runner.timelineTurns[turn.number]}
+                    onInteract={pauseFollowing}
+                    active={index === turns.length - 1 && active}
+                    response={turn.response || ""}
+                    fallback={
                       index === turns.length - 1 && runner.liveText !== null
-                        ? runner.liveText || "Thinking…"
+                        ? runner.liveText || "Waiting for agent output…"
                         : turn.response ||
                           (active
                             ? "Reviewing your instructions and the repository…"
@@ -760,19 +609,6 @@ function AgentChat({
           ) : null}
         </div>
       </div>
-      {runner.selected ? (
-        <Button
-          variant="ghost"
-          className="conversation-activity"
-          onClick={showTools}
-        >
-          <SquareTerminal data-icon="inline-start" />
-          Tool activity{" "}
-          <Badge variant="secondary">{runner.activityCount}</Badge>
-          <span>{runner.streamState || "View output"}</span>
-          <ChevronRight data-icon="inline-end" />
-        </Button>
-      ) : null}
       <div className="chat-composer">
         <div className="composer-context">
           {runner.selected ? (
@@ -920,6 +756,7 @@ export default function App() {
       !matchMedia("(max-width: 900px)").matches ||
       !new URL(location.href).searchParams.has("task"),
   );
+  const [logsOpen, setLogsOpen] = useState(false);
   const [detailsVisible, setDetailsVisible] = useState(
     () => matchMedia("(min-width: 1151px)").matches,
   );
@@ -1114,13 +951,11 @@ export default function App() {
             <IconButton
               icon={SquareTerminal}
               label="Tool activity"
-              pressed={view === "tools"}
-              onClick={() => {
-                setDetailsVisible(false);
-                setView("tools");
-                if (matchMedia("(max-width: 900px)").matches)
-                  setSidebarVisible(false);
-              }}
+              pressed={logsOpen}
+              disabled={
+                !runner.selected || showingNewConversation || view === "history"
+              }
+              onClick={() => setLogsOpen((value) => !value)}
             />
             <div className="rail-spacer" />
             <IconButton
@@ -1174,9 +1009,7 @@ export default function App() {
                       ? "Sessions"
                       : view === "review"
                         ? "Review"
-                        : view === "tools"
-                          ? "Activity"
-                          : "Session"}
+                        : "Session"}
                 </span>
                 <h1>
                   {view === "new"
@@ -1257,10 +1090,6 @@ export default function App() {
                     <FileDiff data-icon="inline-start" />
                     Changes<Badge variant="secondary">{files.length}</Badge>
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="tools">
-                    <SquareTerminal data-icon="inline-start" />
-                    Tools
-                  </ToggleGroupItem>
                 </ToggleGroup>
               </div>
             ) : null}
@@ -1308,7 +1137,6 @@ export default function App() {
                   newSession={newSession}
                   drafts={drafts}
                   workspace={workspace}
-                  showTools={() => setView("tools")}
                   files={files}
                   review={() => {
                     workspace.setMode("changes");
@@ -1336,18 +1164,17 @@ export default function App() {
                   workspace={workspace}
                 />
               </div>
-              <div
-                className="surface-tools"
-                hidden={view !== "tools"}
-                inert={view !== "tools"}
-              >
-                <ActivityPanel
-                  runner={runner}
-                  expanded={true}
-                  toggle={() => setView("session")}
-                />
-              </div>
             </div>
+            <ChatLogs
+              runner={runner}
+              expanded={logsOpen}
+              onToggle={() => setLogsOpen((value) => !value)}
+              visible={
+                Boolean(runner.selected) &&
+                !showingNewConversation &&
+                view !== "history"
+              }
+            />
           </main>
           <SessionDetails
             runner={runner}

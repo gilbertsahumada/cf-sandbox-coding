@@ -48,7 +48,7 @@ import {
 } from "./ui/dialog";
 import { Alert, AlertDescription } from "./ui/alert";
 
-export type SessionView = "session" | "history" | "new" | "review" | "tools";
+export type SessionView = "session" | "history" | "new" | "review";
 type SessionProps = { runner: Runner; titles: Record<string, string> };
 
 function runtimeLabel(runner: Runner, run: Run) {
