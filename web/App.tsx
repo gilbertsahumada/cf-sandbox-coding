@@ -1,3 +1,4 @@
+import { SessionRuntimeControl } from "@/components/session-runtime-control";
 import { ChatCompletion } from "@/components/chat-completion";
 import { workspaceConfig } from "@/lib/config";
 import {
@@ -1159,21 +1160,21 @@ export default function App() {
                 ) : null}
               </div>
               <div className="session-header-actions">
-                {runner.selected && isActive(runner.selected.state) ? (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    aria-busy={runner.stopping}
-                    disabled={runner.busy || runner.stopping}
-                    onClick={() => void runner.stop()}
-                  >
-                    {runner.stopping ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <Square data-icon="inline-start" />
-                    )}
-                    {runner.stopping ? "Stopping…" : "Stop"}
-                  </Button>
+                {runner.selected && !["new", "history"].includes(view) ? (
+                  <SessionRuntimeControl
+                    running={runner.runtime.running}
+                    active={isActive(runner.selected.state)}
+                    checking={runner.runtime.checking || runner.checking}
+                    stopping={runner.stopping}
+                    disabled={
+                      !runner.connected ||
+                      runner.checking ||
+                      runner.busy ||
+                      workspace.hasSaving
+                    }
+                    onRefresh={() => void runner.runtime.refresh()}
+                    onStop={() => void runner.stop()}
+                  />
                 ) : null}
                 {runner.selected && !["new", "history"].includes(view) ? (
                   <IconButton

@@ -369,10 +369,22 @@ export function SessionDetails({
           <p className="details-title">{title}</p>
           <dl className="details-metadata">
             <div>
-              <dt>Status</dt>
+              <dt>Agent status</dt>
               <dd>
                 <TaskStateIcon state={run.state} />
                 {stateNames[run.state]}
+              </dd>
+            </div>
+            <div>
+              <dt>Cloud session</dt>
+              <dd>
+                {runner.runtime.checking
+                  ? "Checking…"
+                  : runner.runtime.running === true
+                    ? "Running"
+                    : runner.runtime.running === false
+                      ? "Stopped"
+                      : "Unknown"}
               </dd>
             </div>
             <div>

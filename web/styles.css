@@ -2799,3 +2799,46 @@ a {
     margin-left: 0;
   }
 }
+
+.session-runtime-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.session-runtime-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.session-runtime-state > svg {
+  width: 13px;
+  height: 13px;
+}
+.session-runtime-state[data-running="true"] > svg {
+  color: var(--added);
+}
+@media (max-width: 600px) {
+  .agent-workspace .session-toolbar {
+    flex-wrap: wrap;
+  }
+  .session-header-actions {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .session-runtime-control {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+  .session-runtime-state {
+    min-width: 0;
+    font-size: 9px;
+  }
+}

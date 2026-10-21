@@ -1,9 +1,11 @@
+import { useSessionRuntime } from "./use-session-runtime";
 import { runnerConfig, workspaceConfig } from "@/lib/config";
 import type {
   GitHubConnection,
   RememberedRepository,
   RepositoryPage,
   TaskStatus,
+  StopResult,
 } from "@/lib/api-types";
 import { prepareSession, type Startup } from "@/lib/session-start";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -718,12 +720,16 @@ export function useRunner() {
     if (!selected || stopping) return;
     const id = selected.id;
     setStopping(true);
-    updateRun(id, { state: "stopping" });
+    const active = isActive(selected.state);
+    if (active) updateRun(id, { state: "stopping" });
     try {
-      const result: TaskStatus = await (
+      const result: StopResult = await (
         await request(`/sandboxes/${id}/task`, undefined, "DELETE")
       ).json();
-      updateRun(id, { state: result.state, finishedAt: Date.now() });
+      updateRun(id, {
+        state: result.state,
+        finishedAt: active ? Date.now() : selected.finishedAt,
+      });
       channel.current?.postMessage({ task: id });
     } catch (error) {
       report(error);
@@ -741,7 +747,13 @@ export function useRunner() {
     ).json();
     if (selectedRef.current === id) setProposal(info);
   };
+  const runtime = useSessionRuntime(
+    connected && selected?.state !== "cloning" ? selectedId : null,
+    revision,
+    request,
+  );
   return {
+    runtime,
     request,
     refresh: () => setRevision((value) => value + 1),
     runs,

@@ -1,5 +1,9 @@
 import { runnerLimits, sandboxTiming, workspacePaths } from "./runtime-config";
-import { isActiveTask, type TaskStatus } from "./task-status";
+import {
+  isActiveTask,
+  type TaskStatus,
+  type ExecutionStatus,
+} from "./task-status";
 export type { TaskStatus } from "./task-status";
 import type {
   RepositoryFileOperation,
@@ -900,6 +904,12 @@ export class AgentSandbox extends DurableObject<Env> {
         "x-content-type-options": "nosniff",
       },
     });
+  }
+
+  async executionStatus(): Promise<ExecutionStatus> {
+    const status = await this.readTask();
+    // Reading this flag does not start a stopped container or restore a checkpoint.
+    return { ...status, containerRunning: this.container.running };
   }
 
   async readTask(): Promise<TaskStatus> {

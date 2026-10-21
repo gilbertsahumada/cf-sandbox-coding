@@ -88,6 +88,7 @@ const tasks = new Map([
   [
     initial,
     {
+      containerRunning: true,
       agent: "pi",
       state: "succeeded",
       turns: [
@@ -206,6 +207,7 @@ createServer(async (req, res) => {
         files: new Map(seedFiles),
         agent: id.startsWith("pi") ? "pi" : "opencode",
         state: "none",
+        containerRunning: true,
         turns: [],
         patch,
       });
@@ -302,6 +304,7 @@ createServer(async (req, res) => {
       const data = JSON.parse(body);
       starts++;
       task.agent = data.agent;
+      task.containerRunning = true;
       task.state = "running";
       task.turns.push({
         number: 1,
@@ -316,13 +319,21 @@ createServer(async (req, res) => {
     if (resource === "task" && req.method === "DELETE") {
       deletes++;
       clearTimeout(task.timer);
-      task.state = "cancelled";
-      task.turns.at(-1).state = "cancelled";
-      task.turns.at(-1).response = "The task stopped. Changes were preserved.";
-      return json({ state: "cancelled", containerRunning: false });
+      task.containerRunning = false;
+      if (["running", "stopping"].includes(task.state)) {
+        task.state = "cancelled";
+        task.turns.at(-1).state = "cancelled";
+        task.turns.at(-1).response =
+          "The task stopped. Changes were preserved.";
+      }
+      return json({ state: task.state, containerRunning: false });
     }
     if (resource === "task")
-      return json({ state: task.state, result: task.turns.at(-1)?.response });
+      return json({
+        state: task.state,
+        containerRunning: task.containerRunning,
+        result: task.turns.at(-1)?.response,
+      });
     if (resource === "messages" && req.method === "POST") {
       let body = "";
       for await (const chunk of req) body += chunk;
@@ -330,6 +341,7 @@ createServer(async (req, res) => {
       sends++;
       if (!requests.has(data.id)) {
         requests.add(data.id);
+        task.containerRunning = true;
         task.state = "running";
         task.turns.push({
           number: task.turns.length + 1,

@@ -16,6 +16,8 @@ Changing selectors or opening a new chat does not start an agent. Repository sea
 
 A `/?task=ID` link reopens a known task after authentication; `/?new=1` opens an empty chat. Recent sessions are the last 12 tasks known to the current browser, not an account-wide server list. Closing a tab or signing out does **not** stop running work: use **Stop**.
 
+The session header separately shows whether the cloud workspace is running or stopped. **Stop session** is available even while the agent is idle; it stops the container while preserving the completed task and its saved context. Status is checked on opening/focusing the session, every 30 seconds while the page is visible, or with the refresh button. An unavailable status is shown explicitly. Continuing can restore a stopped session when its current checkpoint is available.
+
 After a turn finishes, the chat shows a change summary with **Review changes** and **Create PR**. Publication opens the review form; an existing proposal offers **View PR**. Creation is blocked while the agent runs, when file edits are unsaved, or when publication requirements are not met.
 
 ## Local setup
