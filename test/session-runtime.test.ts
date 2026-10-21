@@ -25,7 +25,7 @@ test("an idle but running session still offers an explicit stop action", () => {
 test("stopped and unknown are distinct and never claim that the agent was cancelled", () => {
   const stopped = render({ running: false });
   assert.match(stopped, /Session stopped/);
-  assert.doesNotMatch(stopped, /Stop session/);
+  assert.doesNotMatch(stopped, />Stop session</);
   const unknown = render({ running: null });
   assert.match(unknown, /Session status unavailable/);
   assert.doesNotMatch(unknown, /Session stopped|Stop session/);
@@ -37,4 +37,24 @@ test("checking or stopping disables duplicate stop requests", () => {
     { disabled: true },
   ])
     assert.match(render(props), /disabled=""/);
+});
+
+test("Play starts only a recoverable stopped workspace and reports preparation", () => {
+  const html = render({ running: false, canStart: true, onStart() {} });
+  assert.match(html, /Start session/);
+  assert.match(html, /lucide-play/);
+  assert.doesNotMatch(html, /disabled=""/);
+  assert.match(
+    render({ running: null, starting: true, canStart: true }),
+    /Starting session/,
+  );
+  assert.match(
+    render({ running: null, starting: true, canStart: true }),
+    /disabled=""/,
+  );
+  assert.match(
+    render({ running: false, canStart: false }),
+    /No current workspace recovery checkpoint/,
+  );
+  assert.match(render({ active: true }), /data-slot="spinner"/);
 });

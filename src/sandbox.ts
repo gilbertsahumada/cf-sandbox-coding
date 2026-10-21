@@ -906,6 +906,37 @@ export class AgentSandbox extends DurableObject<Env> {
     });
   }
 
+  /** Restore the existing workspace without launching an agent turn. */
+  async startSession() {
+    if (this.changing || this.publishing)
+      throw Error("Wait for the current operation to finish.");
+    this.changing = true;
+    try {
+      const status = await this.readTask();
+      if (!this.ctx.storage.kv.get("repositoryReady"))
+        throw Error("This session has no cloned repository to restore.");
+      if (
+        !this.container.running ||
+        this.ctx.storage.kv.get("workspaceRestorePending")
+      ) {
+        const checkpoint = this.currentCheckpoint();
+        if (!checkpoint || checkpoint.turn !== this.turn)
+          throw Error(
+            "This session has no current recovery checkpoint. Its archived changes are still available.",
+          );
+        if (isActiveTask(status.state))
+          throw Error(
+            "Wait for the active turn to finish before restoring its workspace.",
+          );
+        if (this.container.running) await this.container.destroy();
+        await this.restoreWorkspace(checkpoint);
+      }
+      return this.sessionStatus();
+    } finally {
+      this.changing = false;
+    }
+  }
+
   async sessionStatus() {
     const status = await this.executionStatus();
     return { state: status.state, containerRunning: status.containerRunning };

@@ -2871,3 +2871,23 @@ a {
 .history-session-row {
   padding-right: 6px;
 }
+
+.session-runtime-control {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--background);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+}
+.session-runtime-state {
+  padding: 0 6px;
+  min-height: 27px;
+}
+.session-heading-copy {
+  flex: 1;
+}
+.session-header-actions {
+  flex-shrink: 0;
+}

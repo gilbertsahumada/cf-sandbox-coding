@@ -55,3 +55,5 @@ Publication retries reconcile the saved commit, branch, and PR. A branch contain
 `GET /sandboxes/:id/task` separates the turn's `state` from `containerRunning`. A successful turn may still have a running idle workspace. `DELETE` on an idle workspace stops the container without changing that completed turn to cancelled; it returns `{ state, containerRunning }`. A follow-up can restore only when normal checkpoint eligibility permits it.
 
 `GET /sandboxes/:id/task?runtime=1` returns only `{ state, containerRunning }` for Overview monitoring, with the same authentication and no-store policy as full task status. It does not start a container or include archived agent output.
+
+`POST /sandboxes/:id/runtime` restores the current recoverable workspace without adding a conversation turn or launching the agent. It returns `{ state, containerRunning }`, is authenticated and subject to the normal mutation origin checks, and returns 409 if the checkpoint is missing, invalid, or another workspace operation is in progress. A running workspace is left intact. Archived patches remain readable without starting a session.

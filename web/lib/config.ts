@@ -19,6 +19,7 @@ export const runnerConfig = {
   updateChannelName: "sandbox-task-updates",
   requestTimeoutMs: 180_000,
   loginTimeoutMs: 15_000,
+  changeReadTimeoutMs: 30_000,
   diffDebounceMs: 2_000,
   authRecheckMs: 10_000,
 } as const;

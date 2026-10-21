@@ -794,3 +794,100 @@ test("lightweight runtime routing remains authenticated and never returns full t
   });
   assert.equal(statusReads, 1);
 });
+
+test("Play restores the same workspace without creating a turn or launching an agent", async () => {
+  for (const agent of ["pi", "opencode"] as const) {
+    const f = fixture();
+    await f.sandbox.startTask("First", agent);
+    f.complete("Saved response");
+    await f.sandbox.stopTask();
+    const before = await f.sandbox.conversation();
+    const spawns = f.spawns;
+    assert.deepEqual(await f.sandbox.startSession(), {
+      state: "succeeded",
+      containerRunning: true,
+    });
+    assert.equal(f.spawns, spawns);
+    assert.equal(f.restores, 1);
+    assert.deepEqual((await f.sandbox.conversation()).turns, before.turns);
+    await f.sandbox.startSession();
+    assert.equal(f.restores, 1);
+  }
+});
+
+test("Play cannot replace missing or corrupt recovery data with a fresh workspace", async () => {
+  const f = fixture();
+  await f.sandbox.startTask("First", "pi");
+  f.complete("Done");
+  await f.sandbox.stopTask();
+  const checkpoint = f.stored.get("checkpoint");
+  f.stored.delete("checkpoint");
+  await assert.rejects(
+    f.sandbox.startSession(),
+    /no current recovery checkpoint/,
+  );
+  assert.equal(f.container.running, false);
+  f.stored.set("checkpoint", { ...checkpoint, digest: "bad" });
+  await assert.rejects(f.sandbox.startSession(), /incomplete/);
+  assert.equal(f.container.running, false);
+  assert.equal(f.spawns, 1);
+});
+
+test("workspace start routing requires authentication and an authorized mutation origin", async () => {
+  let starts = 0;
+  const env = {
+    ...config,
+    MODEL_API_KEY: crypto.randomUUID(),
+    RUNNER_API_TOKEN: crypto.randomUUID(),
+    SANDBOX: {
+      getByName: () => ({
+        startSession: async () => {
+          starts++;
+          return { state: "succeeded", containerRunning: true };
+        },
+      }),
+    },
+  };
+  const url = "https://runner.test/sandboxes/pi-restore/runtime";
+  assert.equal(
+    (
+      await handler.fetch(
+        new Request(url, {
+          method: "POST",
+          headers: { origin: "https://runner.test" },
+        }),
+        env,
+      )
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await handler.fetch(
+        new Request(url, {
+          method: "POST",
+          headers: { origin: "https://evil.test" },
+        }),
+        env,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(starts, 0);
+  const headers = { authorization: `Bearer ${env.RUNNER_API_TOKEN}` };
+  assert.equal(
+    (await handler.fetch(new Request(url, { headers }), env)).status,
+    405,
+  );
+  const response = await handler.fetch(
+    new Request(url, { method: "POST", headers }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    state: "succeeded",
+    containerRunning: true,
+  });
+  assert.equal(starts, 1);
+});

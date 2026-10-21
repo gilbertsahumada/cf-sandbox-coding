@@ -400,7 +400,12 @@ function Workspace({
                   <Button
                     variant="outline"
                     size="xs"
-                    disabled={!runner.proposal?.available}
+                    disabled={
+                      !runner.proposal?.available ||
+                      runner.loadingDiff ||
+                      runner.proposalLoading ||
+                      Boolean(runner.changesError)
+                    }
                     onClick={publish}
                   >
                     <GitPullRequest data-icon="inline-start" />
@@ -510,18 +515,28 @@ function Workspace({
                 <Code2 />
               </EmptyMedia>
               <EmptyTitle>
-                {runner.selected
-                  ? isActive(runner.selected.state)
-                    ? `Waiting for changes from ${agentNames[runner.selected.agent]}`
-                    : "This turn has no changes"
-                  : "Open a work session"}
+                {runner.diffError
+                  ? "Changes could not be loaded"
+                  : runner.selected
+                    ? isActive(runner.selected.state)
+                      ? `Waiting for changes from ${agentNames[runner.selected.agent]}`
+                      : "This turn has no changes"
+                    : "Open a work session"}
               </EmptyTitle>
               <EmptyDescription>
-                {runner.selected
-                  ? "Follow the agent conversation and review its activity. Changes from this session will appear here."
-                  : "Choose a session to browse files, edit code, and review changes."}
+                {runner.diffError ||
+                  (runner.selected
+                    ? "Follow the agent conversation and review its activity. Changes from this session will appear here."
+                    : "Choose a session to browse files, edit code, and review changes.")}
               </EmptyDescription>
             </EmptyHeader>
+            {runner.diffError ? (
+              <EmptyContent>
+                <Button variant="outline" onClick={runner.refresh}>
+                  Retry changes
+                </Button>
+              </EmptyContent>
+            ) : null}
             {!runner.selected ? (
               <EmptyContent>
                 <Button variant="outline" onClick={newSession}>
@@ -734,6 +749,9 @@ function AgentChat({
               changeCount={files.length}
               proposal={runner.proposal}
               loading={runner.loadingDiff}
+              proposalLoading={runner.proposalLoading}
+              error={runner.changesError}
+              onRetry={runner.refresh}
               hasUnsavedEdits={workspace.hasDirty || workspace.hasSaving}
               onReview={review}
               onPublish={publish}
@@ -782,6 +800,8 @@ function AgentChat({
                 !runner.connected ||
                 !runner.selected ||
                 runner.sending ||
+                runner.startingSession ||
+                runner.stopping ||
                 (!chat?.canContinue && !active)
               }
             >
@@ -802,6 +822,8 @@ function AgentChat({
                     !runner.connected ||
                     !runner.selected ||
                     runner.sending ||
+                    runner.startingSession ||
+                    runner.stopping ||
                     (!chat?.canContinue && !active)
                   }
                   placeholder={
@@ -838,7 +860,9 @@ function AgentChat({
                         !draft.trim() ||
                         !chat?.canContinue ||
                         active ||
-                        runner.sending
+                        runner.sending ||
+                        runner.startingSession ||
+                        runner.stopping
                       }
                       aria-label={
                         runner.sending ? "Sending message" : "Send message"
@@ -1166,6 +1190,13 @@ export default function App() {
                     active={isActive(runner.selected.state)}
                     checking={runner.runtime.checking || runner.checking}
                     stopping={runner.stopping}
+                    starting={runner.startingSession}
+                    canStart={Boolean(runner.conversation?.checkpointSaved)}
+                    startReason={runner.conversation?.reason}
+                    onStart={() => {
+                      if (runner.selected)
+                        void runner.startSession(runner.selected.id);
+                    }}
                     disabled={
                       !runner.connected ||
                       runner.checking ||
