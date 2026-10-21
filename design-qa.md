@@ -106,3 +106,9 @@ Evidence: `verification/composer-pickers.png` and `verification/composer-reposit
 Browser checks used simulated APIs on port 8795: switching to OpenCode preserved the message draft and did not start a session; sending created one OpenCode session with the selected repository. Search narrowed the results and exposed a neutral empty state. Load more updated the catalog from 101 to 182 items. Branch editing updated the composer hint. Escape closed the menu and returned focus to its trigger. Phone inspection at 390×844 verified compact controls and a scrollable repository menu; the Send arrow was kept on the same row. Browser warnings/errors: none. No real model/Cloudflare execution was tested.
 
 Validation: `npm run check`, all 71 tests, `npm run build`, and `git diff --check` passed. No actionable P0/P1/P2 findings remain in this scoped iteration.
+
+## Semantic action and Git color accents
+
+The user requested more color for meaningful actions and Git changes while preserving the compact graphite workspace. Stop now uses the existing shadcn destructive variant in both the session header and review toolbar. Theme tokens strengthen additions/removals and give modified files amber and renamed files blue. Compact A/D/M/R badges include accessible names and tooltips; addition/deletion counts retain their signs with subtle tinted backgrounds. Neutral icons, panel surfaces and conversation borders remain unchanged.
+
+Evidence: `verification/semantic-git-colors.png` and `verification/semantic-stop-action.png` (1440×1024). The simulated preview was inspected for diff additions/removals, file badges in tabs and details, and the red Stop action during a follow-up fixture turn. No browser warnings/errors occurred. This did not invoke a real model or Cloudflare task. Type checks, 71 tests, production build and whitespace checks pass. This visual branch starts from main independently of the maintainability draft PR.

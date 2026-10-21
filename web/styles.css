@@ -445,16 +445,31 @@ a {
   font-weight: 400;
 }
 .file-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 5px;
   font-size: 10px;
+  font-weight: 600;
   flex-shrink: 0;
 }
-.status-A,
-.status-M,
-.status-R {
+.status-A {
   color: var(--added);
+  background: color-mix(in srgb, var(--added) 12%, transparent);
+}
+.status-M {
+  color: var(--modified);
+  background: color-mix(in srgb, var(--modified) 12%, transparent);
+}
+.status-R {
+  color: var(--renamed);
+  background: color-mix(in srgb, var(--renamed) 12%, transparent);
 }
 .status-D {
   color: var(--removed);
+  background: color-mix(in srgb, var(--removed) 12%, transparent);
 }
 .sidebar-bottom {
   border-top: 1px solid var(--border);
@@ -1557,6 +1572,14 @@ a {
   --sidebar-accent-foreground: #f5f6f8;
   --heading: #f5f6f8;
   --code-surface: #191c21;
+  /* Semantic accents identify actions and Git changes without coloring the chrome. */
+  --destructive: #ff858b;
+  --added: #71d9a2;
+  --added-background: #19392c;
+  --removed: #ff8c95;
+  --removed-background: #43272e;
+  --modified: #e8bd72;
+  --renamed: #8ebaff;
 }
 
 /* Compact session-first workspace. Neutral selection surfaces replace side stripes. */
@@ -2672,4 +2695,18 @@ a {
   .first-message-actions > button[type="submit"] {
     flex-shrink: 0;
   }
+}
+
+.diff-stat > .diff-added,
+.diff-stat > .diff-removed {
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.diff-stat > .diff-added {
+  background: color-mix(in srgb, var(--added) 10%, transparent);
+}
+.diff-stat > .diff-removed {
+  background: color-mix(in srgb, var(--removed) 10%, transparent);
 }

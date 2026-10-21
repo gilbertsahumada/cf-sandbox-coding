@@ -4,6 +4,7 @@ import {
   SessionDetails,
   type SessionView,
 } from "@/components/session-navigation";
+import { fileStatusNames } from "@/lib/editor";
 import { sessionTitle, repositoryLabel } from "@/lib/session-presentation";
 import { startupText } from "@/lib/session-start";
 import {
@@ -447,7 +448,11 @@ function Workspace({
                 >
                   <FileIcon path={item.path} data-icon="inline-start" />
                   {item.path.split("/").at(-1)}
-                  <span className={cn("file-status", `status-${item.status}`)}>
+                  <span
+                    className={cn("file-status", `status-${item.status}`)}
+                    aria-label={fileStatusNames[item.status]}
+                    title={fileStatusNames[item.status]}
+                  >
                     {item.status}
                   </span>
                 </TabsTrigger>
@@ -1116,8 +1121,9 @@ export default function App() {
               <div className="session-header-actions">
                 {runner.selected && isActive(runner.selected.state) ? (
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
+                    aria-busy={runner.stopping}
                     disabled={runner.busy || runner.stopping}
                     onClick={() => void runner.stop()}
                   >
