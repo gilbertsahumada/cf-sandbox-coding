@@ -96,3 +96,13 @@ Browser verification with simulated APIs:
 - Browser console had no warnings or errors. No real model/Cloudflare task was executed.
 
 No actionable P0/P1/P2 findings remain. First-message final result: passed.
+
+## Compact composer pickers
+
+The user's next instruction requests Codex-style agent and repository selection within the first-message composer. The graphite palette, compact typography, official monochrome agent logos, neutral borders and rounded surfaces are preserved. This iteration replaces the segmented agent control and repository setup dialog with anchored shadcn Select and Popover menus; it does not copy an inspected Codex screen.
+
+Evidence: `verification/composer-pickers.png` and `verification/composer-repository-picker.png` (1440×1024). The agent menu shows the current selection and model; the repository menu provides loaded-catalog search, owner/name hierarchy, visibility icons, a selection check, pagination, optional branch/tag and public example. No dependencies were added; Popover uses the existing Radix package.
+
+Browser checks used simulated APIs on port 8795: switching to OpenCode preserved the message draft and did not start a session; sending created one OpenCode session with the selected repository. Search narrowed the results and exposed a neutral empty state. Load more updated the catalog from 101 to 182 items. Branch editing updated the composer hint. Escape closed the menu and returned focus to its trigger. Phone inspection at 390×844 verified compact controls and a scrollable repository menu; the Send arrow was kept on the same row. Browser warnings/errors: none. No real model/Cloudflare execution was tested.
+
+Validation: `npm run check`, all 71 tests, `npm run build`, and `git diff --check` passed. No actionable P0/P1/P2 findings remain in this scoped iteration.
