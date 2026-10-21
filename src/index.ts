@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { runnerLimits } from "./runtime-config";
 import { ChatMessage } from "./conversation";
 import { logCursor } from "./event-stream";
@@ -343,17 +344,6 @@ export default {
         }
       }
       if (resource === "pull-request") {
-        if (principal.role === "demo")
-          return Response.json(
-            {
-              available: false,
-              reason: "Pull request publication is disabled in the demo.",
-            },
-            {
-              status: request.method === "GET" ? 200 : 403,
-              headers: { "cache-control": "no-store" },
-            },
-          );
         const headers = { "cache-control": "no-store" };
         if (request.method === "GET")
           return Response.json(await sandbox.pullRequestStatus(), { headers });
@@ -377,7 +367,9 @@ export default {
           try {
             return Response.json(
               await sandbox.createPullRequest(
-                name,
+                principal.role === "demo"
+                  ? `demo-${createHash("sha256").update(`${principal.subject}:${name}`).digest("hex")}`
+                  : name,
                 parsed.data.title,
                 parsed.data.description,
               ),
@@ -429,7 +421,11 @@ export default {
                 parsed.data.installationId,
                 parsed.data.repositoryId,
               )
-            : undefined;
+            : principal.role === "demo"
+              ? await env.GITHUB.getByName("owner").publicRepository(
+                  parsed.data.url!,
+                )
+              : undefined;
         const repositoryUrl = grant?.url || parsed.data.url!;
         const result = await sandbox.cloneRepository(
           repositoryUrl,

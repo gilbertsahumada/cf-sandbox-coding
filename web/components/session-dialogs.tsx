@@ -287,8 +287,8 @@ export function NewConversation({
                 placeholder="https://github.com/owner/repository"
               />
               <FieldDescription>
-                Your demo sessions are isolated. Private repositories and PR
-                publishing are disabled.
+                Your demo sessions are isolated. Create draft PRs in public
+                repositories authorized in the owner’s GitHub App.
               </FieldDescription>
             </Field>
           ) : null}

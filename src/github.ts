@@ -210,6 +210,46 @@ export class GitHubConnection extends DurableObject<Env> {
       defaultBranch: repo.default_branch,
     };
   }
+  async publicRepository(url: string): Promise<GitHubRepository | undefined> {
+    const parsed = new URL(url);
+    if (
+      parsed.origin !== "https://github.com" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      !/^\/[\w.-]+\/[\w.-]+\/?$/.test(parsed.pathname)
+    )
+      throw Error("Use a public GitHub repository URL.");
+    const fullName = parsed.pathname
+      .replace(/^\//, "")
+      .replace(/\/$/, "")
+      .replace(/\.git$/, "");
+    if (!this.ctx.storage.kv.get<Installation[]>("installations")?.length)
+      return undefined;
+    // Resolve only the submitted public repository; never return the owner's catalog.
+    for (let page = 1; ; page++) {
+      const batch = await this.repositories(page);
+      const match = batch.repositories.find(
+        (repo) =>
+          !repo.private &&
+          repo.fullName.toLowerCase() === fullName.toLowerCase(),
+      );
+      if (match) {
+        const current = await this.repository(
+          match.installationId,
+          match.repositoryId,
+        );
+        if (
+          current.private ||
+          current.fullName.toLowerCase() !== fullName.toLowerCase()
+        )
+          return undefined;
+        return { ...current, publicOnly: true };
+      }
+      if (!batch.hasMore) return undefined;
+    }
+  }
   async selectedRepository(): Promise<{
     repository: GitHubRepository | null;
     warning?: string;
@@ -245,6 +285,14 @@ export class GitHubConnection extends DurableObject<Env> {
     return { repository };
   }
   async tokenForRepository(grant: RepositoryGrant): Promise<string> {
+    if (grant.publicOnly) {
+      const repository = await this.repository(
+        grant.installationId,
+        grant.repositoryId,
+      );
+      if (repository.private || repository.fullName !== grant.fullName)
+        throw Error("The demo repository is no longer public or authorized.");
+    }
     return this.installationToken(grant.installationId, grant.repositoryId);
   }
   async createPullRequest(
@@ -268,6 +316,10 @@ export class GitHubConnection extends DurableObject<Env> {
       );
       if (repository.fullName !== grant.fullName)
         throw Error("The repository was renamed. Start a new task.");
+      if (grant.publicOnly && repository.private)
+        throw Error(
+          "Demo pull requests require a public repository authorized in the GitHub App.",
+        );
       validateChanges(proposal);
       let token: string;
       try {
