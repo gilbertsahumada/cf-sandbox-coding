@@ -4,7 +4,7 @@
 
 Use Node.js 24, Docker, Workers Paid, and a Cloudflare account authorized for Containers. The checked-in `wrangler.jsonc` contains an account-specific `account_id`, Worker name, model settings, asset binding, and Durable Object bindings. Review these before deploying to another account. `npm run deploy` builds `dist/ui` and then invokes Wrangler; the container image installs the pinned Pi/OpenCode versions from `Dockerfile`.
 
-Keep `MODEL_API_KEY` and `RUNNER_API_TOKEN` as Worker secrets; local `.dev.vars` exists only for local tooling. Do not put secrets in configuration, browser storage, commits, patches, or documentation. `runner.json` holds the CLI's default URL; `WORKER_URL` overrides it. Changing model endpoint/ID does not upload a secret: use `wrangler secret put` separately.
+Keep `MODEL_API_KEY`, `RUNNER_API_TOKEN`, `WEB_ACCESS_CODE`, and optional `DEMO_ACCESS_CODE` as Worker secrets; local `.dev.vars` exists only for local tooling. Do not put secrets in configuration, browser storage, commits, patches, or documentation. `runner.json` holds the CLI's default URL; `WORKER_URL` overrides it. Changing model endpoint/ID does not upload a secret: use `wrangler secret put` separately.
 
 ## GitHub connection and publication
 
@@ -23,7 +23,7 @@ Publication supports binary files, deletions, executable bits, and symlinks, sub
 
 ## Authentication and trust boundaries
 
-The runner is for one operator. Everyone holding `RUNNER_API_TOKEN` shares its catalog and task access; it has no per-user permissions. Browser sessions use an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Mutations with that cookie require the same origin. GitHub's separate temporary flow cookie uses `SameSite=Lax` to allow its redirect back.
+Owner sessions and the internal API token share one owner catalog and task access. Owner browser login uses a separate `WEB_ACCESS_CODE`; optional `DEMO_ACCESS_CODE` sessions are isolated by signed visitor identity and cannot access GitHub accounts or publish PRs. The internal token is accepted only as an API bearer credential. Browser sessions use signed `HttpOnly`, `Secure`, `SameSite=Strict` cookies, expiring after eight hours for owners and one hour for demo visitors. Access codes need at least 24 characters and must differ from each other, the runner token, and model key. Rotation revokes sessions for that code. Cookies contain no credential values. Mutations with that cookie require the same origin. GitHub's separate temporary flow cookie uses `SameSite=Lax` to allow its redirect back.
 
 The browser and native agents never receive the real model key. Agents use a placeholder; `Outbound` injects the credential only for POSTs to the configured HTTPS model origin and exact `/chat/completions` or `/responses` path. Redirects are not followed with the credential. Repository code can still make model requests through that proxy: hiding the secret is not a token budget.
 

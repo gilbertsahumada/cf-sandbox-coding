@@ -11,3 +11,6 @@ verification/
 .DS_Store
 *.pem
 *.key
+
+# Local agent instructions are intentionally not published.
+/AGENTS.md

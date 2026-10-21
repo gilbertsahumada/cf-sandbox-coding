@@ -17,7 +17,7 @@ No scheduled or continuous self-improvement loop is enabled. Do not introduce on
 
 > Reproduce [specific problem] and fix its demonstrated cause. Keep existing security and recovery behavior. Add a focused regression test if appropriate. Run the required checks, explain which integrations still need live verification, and return the diff. Do not commit, push, merge, or deploy from the sandbox.
 
-Read [AGENTS.md](../AGENTS.md), [README.md](../README.md), and [ARCHITECTURE.md](ARCHITECTURE.md) before changing the runner. Keep English comments and messages; explain non-obvious decisions without narrating each line. Prefer focused contracts and module ownership over scattered state strings or a general-purpose constants file.
+Read [CONTRIBUTING.md](../CONTRIBUTING.md), [README.md](../README.md), and [ARCHITECTURE.md](ARCHITECTURE.md) before changing the runner. Keep English comments and messages; explain non-obvious decisions without narrating each line. Prefer focused contracts and module ownership over scattered state strings or a general-purpose constants file.
 
 ## Manual edits during a session
 

@@ -1034,7 +1034,9 @@ export default function App() {
             </span>
             <strong>Sandbox</strong>
             <span className="brand-divider" />
-            <span className="brand-subtitle">Workspace</span>
+            <span className="brand-subtitle">
+              {runner.demo ? "Demo workspace" : "Workspace"}
+            </span>
           </div>
           <div className="titlebar-actions">
             <Button

@@ -2,14 +2,14 @@
 
 All routes below require `Authorization: Bearer <RUNNER_API_TOKEN>` or the runner's authenticated session cookie. The page, static assets, and GitHub flow callbacks have separate handling. Model configuration must exist before sandbox operations.
 
-Browser sign-in sends `POST /session` with the Bearer token and an `Origin` matching the Worker. It sets an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Cookie-authenticated mutations require that same origin. Bearer clients can call task endpoints directly; browser credentials are never stored in localStorage.
+Browser sign-in sends `POST /session` with `WEB_ACCESS_CODE` (owner) or `DEMO_ACCESS_CODE` as the Bearer credential and an `Origin` matching the Worker. The internal `RUNNER_API_TOKEN` is rejected by browser login. It sets a signed `HttpOnly`, `Secure`, `SameSite=Strict` cookie containing only role, visitor identity, and expiry, lasting eight hours for owners or one hour for demo visitors. Cookie-authenticated mutations require that same origin. Bearer clients can call task endpoints directly; browser credentials are never stored in localStorage.
 
 ## Session and GitHub
 
 | Method | Route                         | Behavior                                                                           |
 | ------ | ----------------------------- | ---------------------------------------------------------------------------------- |
 | POST   | `/session`                    | Establish the browser session; requires Bearer plus same origin.                   |
-| GET    | `/session`                    | Return authentication status and configured model ID.                              |
+| GET    | `/session`                    | Return authentication status, model ID, role, and non-secret workspace identity.   |
 | DELETE | `/session`                    | Clear the browser cookie; does not cancel work.                                    |
 | GET    | `/health`                     | Return Worker health and supported agent names.                                    |
 | GET    | `/github/status`              | Connection and management metadata without credentials.                            |
@@ -57,3 +57,7 @@ Publication retries reconcile the saved commit, branch, and PR. A branch contain
 `GET /sandboxes/:id/task?runtime=1` returns only `{ state, containerRunning }` for Overview monitoring, with the same authentication and no-store policy as full task status. It does not start a container or include archived agent output.
 
 `POST /sandboxes/:id/runtime` restores the current recoverable workspace without adding a conversation turn or launching the agent. It returns `{ state, containerRunning }`, is authenticated and subject to the normal mutation origin checks, and returns 409 if the checkpoint is missing, invalid, or another workspace operation is in progress. A running workspace is left intact. Archived patches remain readable without starting a session.
+
+## Demo authorization
+
+Demo cookies scope every sandbox resource to a visitor-specific Durable Object namespace derived on the server from the verified signature. Client task IDs and query parameters cannot select an owner or another visitor namespace. Demo repository creation accepts public URL requests only; installation/repository ID selections, GitHub account management/catalog routes, and PR publication return 403. PR status returns `available: false` with an explanation. Anonymous requests still return 401. Demo codes are not API bearer tokens; they are exchanged only at same-origin browser login.

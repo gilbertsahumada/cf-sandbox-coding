@@ -24,11 +24,13 @@ import {
   type RunState,
   type StreamState,
 } from "@/lib/types";
-function initialHistory(): Run[] {
+function initialHistory(
+  storageKey: string = runnerConfig.historyStorageKey,
+): Run[] {
   let runs: Run[] = [];
   try {
     runs = historyForStorage(
-      JSON.parse(localStorage.getItem(runnerConfig.historyStorageKey) || "[]"),
+      JSON.parse(localStorage.getItem(storageKey) || "[]"),
       { preserveAll: true },
     );
   } catch {}
@@ -63,6 +65,10 @@ export function useRunner() {
   const [selectedId, setSelectedId] = useState(() => runs[0]?.id || null);
   const selected = runs.find((run) => run.id === selectedId) || null;
   const [connected, setConnected] = useState(false);
+  const [demo, setDemo] = useState(false);
+  const [historyScope, setHistoryScope] = useState<string>(
+    runnerConfig.historyStorageKey,
+  );
   const [checking, setChecking] = useState(true);
   const [authOpen, setAuthOpen] = useState(false);
   const [startup, setStartup] = useState<Startup | null>(null);
@@ -174,7 +180,33 @@ export function useRunner() {
       }
       return response;
     },
-    [clearSession],
+    [clearSession, historyScope],
+  );
+  const applySession = useCallback(
+    (info: { role?: string; workspace?: string }) => {
+      const isDemo = info.role === "demo";
+      const key = isDemo
+        ? `${runnerConfig.historyStorageKey}:demo:${info.workspace}`
+        : runnerConfig.historyStorageKey;
+      authEpoch.current++;
+      setDemo(isDemo);
+      setHistoryScope(key);
+      const restored = initialHistory(key).map((run) =>
+        isDemo && run.private
+          ? { ...run, private: false, repository: "Public repository" }
+          : run,
+      );
+      setRuns(restored);
+      setSelectedId(restored[0]?.id || null);
+      setConversation(null);
+      setDiff("");
+      setProposal(null);
+      setGithub(null);
+      setRepositories([]);
+      setRepository(null);
+      setConnected(true);
+    },
+    [],
   );
   const report = useCallback((error: unknown) => {
     if (!(error instanceof DOMException && error.name === "AbortError"))
@@ -219,7 +251,7 @@ export function useRunner() {
   useEffect(() => {
     try {
       localStorage.setItem(
-        runnerConfig.historyStorageKey,
+        historyScope,
         JSON.stringify(
           historyForStorage(runs, {
             retainedIds: runs
@@ -231,7 +263,7 @@ export function useRunner() {
         ),
       );
     } catch {}
-  }, [runs, sessions.snapshots]);
+  }, [runs, sessions.snapshots, historyScope]);
   useEffect(() => {
     const url = new URL(location.href);
     if (selectedId) url.searchParams.set("task", selectedId);
@@ -242,8 +274,10 @@ export function useRunner() {
     let current = true;
     const epoch = authEpoch.current;
     fetch("/session", { credentials: "same-origin", cache: "no-store" })
-      .then((response) => {
-        if (current && epoch === authEpoch.current) setConnected(response.ok);
+      .then(async (response) => {
+        if (!response.ok) return;
+        const info = await response.json();
+        if (current && epoch === authEpoch.current) applySession(info);
       })
       .catch(report)
       .finally(() => {
@@ -252,7 +286,7 @@ export function useRunner() {
     return () => {
       current = false;
     };
-  }, [report]);
+  }, [report, applySession]);
   useEffect(() => {
     if (typeof BroadcastChannel !== "function") return;
     const instance = new BroadcastChannel(runnerConfig.updateChannelName);
@@ -312,7 +346,7 @@ export function useRunner() {
     [report, request],
   );
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || demo) return;
     const ticket = ++catalogEpoch.current;
     request("/github/status")
       .then((response) => response.json())
@@ -325,7 +359,7 @@ export function useRunner() {
     return () => {
       catalogEpoch.current++;
     };
-  }, [connected, loadRepositories, report, request]);
+  }, [connected, demo, loadRepositories, report, request]);
   const chooseRepository = useCallback(
     (repo: Repository) => {
       setRepository(repo);
@@ -672,11 +706,16 @@ export function useRunner() {
       signal: AbortSignal.timeout(runnerConfig.loginTimeoutMs),
     });
     if (!response.ok)
-      throw Error(
-        "Could not sign in. Use RUNNER_API_TOKEN, not the Qwen API key.",
-      );
+      throw Error("Could not sign in. Check your workspace access code.");
+    // Fetch the verified namespace, never derive it from the access code in the browser.
+    const infoResponse = await fetch("/session", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!infoResponse.ok)
+      throw Error("Could not establish your workspace session.");
+    applySession(await infoResponse.json());
     setAuthOpen(false);
-    setConnected(true);
     setNotice("");
   };
   const logout = async () => {
@@ -691,6 +730,7 @@ export function useRunner() {
     ref: string,
     example = false,
     onPreparing?: () => void,
+    publicRepository?: string,
   ) => {
     if (!connected) {
       setAuthOpen(true);
@@ -698,12 +738,16 @@ export function useRunner() {
     }
     if (startLock.current || busy)
       throw Error("Wait for the new session to finish preparing.");
-    if (!repo && !example) throw Error("Choose a GitHub repository.");
+    if (!repo && !example && !demo) throw Error("Choose a GitHub repository.");
+    if (demo && !publicRepository)
+      throw Error("Choose a public GitHub repository URL.");
     const run: Run = {
       id: `${agent}-${crypto.randomUUID()}`,
       agent,
       private: repo?.private || false,
-      repository: repo?.url || workspaceConfig.exampleRepository.url,
+      repository: demo
+        ? publicRepository!
+        : repo?.url || workspaceConfig.exampleRepository.url,
       ref,
       state: "cloning",
       startedAt: Date.now(),
@@ -730,7 +774,7 @@ export function useRunner() {
       await prepareSession(
         run.id,
         {
-          ...(repo
+          ...(!demo && repo
             ? {
                 installationId: repo.installationId,
                 repositoryId: repo.repositoryId,
@@ -890,6 +934,7 @@ export function useRunner() {
   };
   return {
     runtime,
+    demo,
     startSession,
     startingIds,
     startingSession: Boolean(selectedId && startingIds.has(selectedId)),

@@ -2,11 +2,11 @@
 
 Run **Pi or OpenCode in Cloudflare Sandbox**, with an OpenAI-compatible model provider of your choice. The browser manages conversations, repository files, live tool activity, cumulative changes, and draft pull requests. AI Gateway is not required.
 
-This is a **single-operator runner**, not a multi-user service. Everyone with the runner access token shares access to its tasks and connected repositories. Different sessions can run concurrently in isolated sandboxes. Each session accepts one agent turn at a time; new-session preparation is serialized in the browser.
+Owner access remains single-operator: owner sessions and the internal API token share access to the owner workspace. A separate demo code grants isolated visitor sessions with public repositories only; it cannot access the owner GitHub account, owner sessions, or PR publication. Different sessions can run concurrently in isolated sandboxes. Each session accepts one agent turn at a time; new-session preparation is serialized in the browser.
 
 ## Start a conversation
 
-1. Open your deployed Worker and sign in with `RUNNER_API_TOKEN` (not the model API key).
+1. Open your deployed Worker and sign in with your `WEB_ACCESS_CODE`, or share the separate `DEMO_ACCESS_CODE` for an isolated demo.
 2. Choose **New chat**, then select Pi or OpenCode and a repository in the message composer. Connect GitHub to browse authorized public and private repositories, or use the public example.
 3. Send your first message to create the cloud session. Preparation and cloning appear in the conversation immediately.
 4. Continue in the same chat after each reply. **Tools** shows live activity; **Changes** opens the cumulative diff, repository explorer, and editor.
@@ -33,7 +33,7 @@ npm ci
 cp .dev.vars.example .dev.vars
 ```
 
-Set `MODEL_API_KEY` and a long random `RUNNER_API_TOKEN` in the local `.dev.vars` file. Keep both secret; the file is excluded from Git and the Docker build context. Never use real secrets in the simulated preview.
+Set `MODEL_API_KEY`, a long random `RUNNER_API_TOKEN` for programmatic API access, and a separate random `WEB_ACCESS_CODE` for browser owner access in the local `.dev.vars` file. Keep both secret; the file is excluded from Git and the Docker build context. Never use real secrets in the simulated preview.
 
 Configure the model's base URL and exact model ID:
 
@@ -52,7 +52,7 @@ npm run dev:ui         # Vite UI with hot reload; needs the Worker on :8787.
 npm run preview:editor # Simulated UI on :8795; no Cloudflare or model calls.
 ```
 
-The fixture preview uses `fixture-runner-token` if you test signing out and back in. Run it with `--slow`, `--slow-start`, `--long-running` (two-minute simulated turns), or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
+The fixture preview uses `fixture-access-code-for-preview-only` if you test signing out and back in. Run it with `--slow`, `--slow-start`, `--long-running` (two-minute simulated turns), or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
 
 ## Validate and deploy
 
@@ -69,6 +69,9 @@ Deployment needs Workers Paid, Docker, and a Cloudflare account with Containers 
 npx wrangler login
 npx wrangler secret put MODEL_API_KEY
 npx wrangler secret put RUNNER_API_TOKEN
+npx wrangler secret put WEB_ACCESS_CODE
+# Optional isolated demo access:
+npx wrangler secret put DEMO_ACCESS_CODE
 npm run deploy
 ```
 
@@ -90,8 +93,18 @@ npm run task -- opencode https://github.com/owner/repo "Add parser tests. Do not
 - [Self-improvement workflow](docs/SELF_IMPROVEMENT.md): use this repository as agent input while keeping changes reviewable.
 - [Brand asset provenance](docs/BRAND_ASSETS.md): sources for the bundled agent and hosting marks.
 
-Comments, interface text, accessibility labels, and application messages are in English. Keep comments focused on invariants and non-obvious decisions; use descriptive names and TypeScript types for the ordinary flow. See [AGENTS.md](AGENTS.md) for repository instructions.
+Comments, interface text, accessibility labels, and application messages are in English. Keep comments focused on invariants and non-obvious decisions; use descriptive names and TypeScript types for the ordinary flow. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution standards. Local agent instructions are excluded from version control.
 
 ## Upstream references
 
 The container coordination follows the [Cloudflare coding-agent runner](https://developers.cloudflare.com/sandbox/get-started/build-a-coding-agent-runner/), with adapters for [Pi](https://developers.cloudflare.com/sandbox/coding-agents/pi/) and [OpenCode](https://developers.cloudflare.com/sandbox/coding-agents/opencode/). Provider configuration references: [Pi models](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md) and [OpenCode providers](https://opencode.ai/docs/providers/).
+
+## Sharing a demo
+
+Set independent `WEB_ACCESS_CODE` and optional `DEMO_ACCESS_CODE` Worker secrets with at least 24 random characters. Never reuse the runner token, model key, or the same code for both roles. Local values go in ignored `.dev.vars`; deployed values must be uploaded separately with `wrangler secret put`. Do not use `VITE_` variables for credentials.
+
+Browser login exchanges the access code for an expiring signed HttpOnly cookie containing only role, a random visitor ID, and expiry. It contains none of the access codes or internal/provider credentials. Owner sessions last eight hours; demo sessions last one hour. Rotating/removing an access code revokes its browser sessions. Deploying this change invalidates the old raw-token cookies and requires signing in again.
+
+Demo visitors enter a public GitHub URL. Each browser login has its own server namespace, even if it requests the same task ID as another visitor or the owner. Demo access cannot connect GitHub, select private repositories, or create PRs; it can consume the shared model/Cloudflare budget within the existing execution limits. It is not a separate billing account or an unlimited public service. Expired/signed-out demo sessions cannot recover the old visitor namespace by guessing a task ID.
+
+`AGENTS.md` is kept locally and ignored. Removing it from the current tree does not remove copies in earlier commits; review history before changing repository visibility.

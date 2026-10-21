@@ -1,7 +1,13 @@
 import { runnerLimits } from "./runtime-config";
 import { ChatMessage } from "./conversation";
 import { logCursor } from "./event-stream";
-import { authenticated, hasBearer, sameOrigin, sessionCookie } from "./auth";
+import {
+  authenticate,
+  hasBearer,
+  loginRole,
+  sameOrigin,
+  sessionCookie,
+} from "./auth";
 import { z } from "zod";
 import { Agent } from "./agents";
 import { githubCallback, githubRoute } from "./github-routes";
@@ -133,42 +139,68 @@ export default {
       !sameOrigin(request)
     )
       return new Response("Origin not allowed", { status: 403 });
-    if (!authenticated(request, env.RUNNER_API_TOKEN))
+    if (path === "/session" && request.method === "POST") {
+      if (!sameOrigin(request))
+        return new Response("Origin not allowed", { status: 403 });
+      const role = loginRole(request, env);
+      if (!role)
+        return new Response("Invalid access code", {
+          status: 401,
+          headers: { "cache-control": "no-store" },
+        });
+      return Response.json(
+        { ok: true, role },
+        {
+          headers: {
+            "set-cookie": sessionCookie(env, role),
+            "cache-control": "no-store",
+          },
+        },
+      );
+    }
+    const principal = authenticate(request, env);
+    if (!principal)
       return new Response("Unauthorized", {
         status: 401,
         headers: { "cache-control": "no-store" },
       });
-    if (path.startsWith("/github/")) return githubRoute(request, env);
     if (path === "/session") {
-      if (request.method === "POST") {
-        if (!hasBearer(request, env.RUNNER_API_TOKEN) || !sameOrigin(request))
-          return new Response("Origin not allowed", { status: 403 });
-        return Response.json(
-          { ok: true },
-          {
-            headers: {
-              "set-cookie": sessionCookie(env.RUNNER_API_TOKEN),
-              "cache-control": "no-store",
-            },
-          },
-        );
-      }
+      const headers = { "cache-control": "no-store" };
       if (request.method === "DELETE")
         return Response.json(
           { ok: true },
           {
             headers: {
-              "set-cookie": sessionCookie("", true),
-              "cache-control": "no-store",
+              ...headers,
+              "set-cookie": sessionCookie(env, "owner", true),
             },
           },
         );
       if (request.method === "GET")
         return Response.json(
-          { ok: true, model: env.MODEL_ID },
-          { headers: { "cache-control": "no-store" } },
+          {
+            ok: true,
+            model: env.MODEL_ID,
+            role: principal.role,
+            workspace: principal.subject,
+          },
+          { headers },
         );
       return new Response("Method not allowed", { status: 405 });
+    }
+    if (path.startsWith("/github/")) {
+      if (principal.role === "demo") {
+        if (request.method === "GET" && path === "/github/status")
+          return Response.json(
+            { connected: false, accounts: [] },
+            { headers: { "cache-control": "no-store" } },
+          );
+        return Response.json(
+          { message: "GitHub account access is disabled in the demo." },
+          { status: 403, headers: { "cache-control": "no-store" } },
+        );
+      }
+      return githubRoute(request, env);
     }
     if (new URL(request.url).pathname === "/health" && request.method === "GET")
       return Response.json({ ok: true, agents: Agent.options });
@@ -183,7 +215,10 @@ export default {
         { status: 503 },
       );
     const [, name, resource] = match;
-    const sandbox = env.SANDBOX.getByName(name);
+    // Visitor identities come only from a verified signed cookie, never a request parameter.
+    const sandbox = env.SANDBOX.getByName(
+      principal.role === "demo" ? `demo:${principal.subject}:${name}` : name,
+    );
     try {
       if (resource === "files" || resource === "file") {
         const headers = { "cache-control": "no-store" };
@@ -308,6 +343,17 @@ export default {
         }
       }
       if (resource === "pull-request") {
+        if (principal.role === "demo")
+          return Response.json(
+            {
+              available: false,
+              reason: "Pull request publication is disabled in the demo.",
+            },
+            {
+              status: request.method === "GET" ? 200 : 403,
+              headers: { "cache-control": "no-store" },
+            },
+          );
         const headers = { "cache-control": "no-store" };
         if (request.method === "GET")
           return Response.json(await sandbox.pullRequestStatus(), { headers });
@@ -367,6 +413,16 @@ export default {
         const parsed = Repository.safeParse(await readJson(request));
         if (!parsed.success)
           return Response.json({ error: parsed.error.issues }, { status: 400 });
+        if (
+          principal.role === "demo" &&
+          (!parsed.data.url ||
+            parsed.data.installationId ||
+            parsed.data.repositoryId)
+        )
+          return Response.json(
+            { message: "The demo accepts public repository URLs only." },
+            { status: 403 },
+          );
         const grant =
           parsed.data.repositoryId && parsed.data.installationId
             ? await env.GITHUB.getByName("owner").repository(

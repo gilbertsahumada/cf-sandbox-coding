@@ -63,6 +63,12 @@ function GitHubConnectButton({ runner }: { runner: Runner }) {
       setPending(false);
     }
   }
+  if (runner.demo)
+    return (
+      <p className="text-xs text-muted-foreground">
+        Demo access uses public repositories. GitHub account access is disabled.
+      </p>
+    );
   return (
     <Button
       type="button"
@@ -122,7 +128,7 @@ export function AuthDialog({ runner }: { runner: Runner }) {
         <form onSubmit={submit}>
           <FieldGroup>
             <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="runner-token">Access token</FieldLabel>
+              <FieldLabel htmlFor="runner-token">Access code</FieldLabel>
               <Input
                 id="runner-token"
                 autoComplete="current-password"
@@ -133,8 +139,7 @@ export function AuthDialog({ runner }: { runner: Runner }) {
                 aria-invalid={Boolean(error)}
               />
               <FieldDescription>
-                Use RUNNER_API_TOKEN from your local .dev.vars file. The model
-                API key stays on the server.
+                Enter the workspace or demo access code you received.
               </FieldDescription>
             </Field>
             <FormError error={error} />
@@ -166,12 +171,17 @@ export function NewConversation({
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [example, setExample] = useState(false);
+  const [publicRepository, setPublicRepository] = useState<string>(
+    workspaceConfig.exampleRepository.url,
+  );
   const formRef = useRef<HTMLFormElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const canSend =
     Boolean(prompt.trim()) &&
     !runner.starting &&
-    Boolean(runner.repository || example);
+    Boolean(
+      runner.demo ? publicRepository.trim() : runner.repository || example,
+    );
   useEffect(() => {
     if (active) messageRef.current?.focus({ preventScroll: true });
   }, [active]);
@@ -187,6 +197,7 @@ export function NewConversation({
         ref.trim(),
         example,
         onStarting,
+        runner.demo ? publicRepository.trim() : undefined,
       );
       setPrompt("");
     } catch (error) {
@@ -231,14 +242,20 @@ export function NewConversation({
                 className="first-message-actions"
               >
                 <AgentPicker value={agent} onChange={setAgent} />
-                <RepositoryPicker
-                  runner={runner}
-                  example={example}
-                  onExampleChange={setExample}
-                  branch={ref}
-                  onBranchChange={setRef}
-                  connectAction={<GitHubConnectButton runner={runner} />}
-                />
+                {runner.demo ? (
+                  <span className="text-xs text-muted-foreground">
+                    Demo · public repositories
+                  </span>
+                ) : (
+                  <RepositoryPicker
+                    runner={runner}
+                    example={example}
+                    onExampleChange={setExample}
+                    branch={ref}
+                    onBranchChange={setRef}
+                    connectAction={<GitHubConnectButton runner={runner} />}
+                  />
+                )}
                 <InputGroupButton
                   type="submit"
                   variant="default"
@@ -256,11 +273,30 @@ export function NewConversation({
               </InputGroupAddon>
             </InputGroup>
           </Field>
+          {runner.demo ? (
+            <Field>
+              <FieldLabel htmlFor="public-repository">
+                Public GitHub repository
+              </FieldLabel>
+              <Input
+                id="public-repository"
+                type="url"
+                required
+                value={publicRepository}
+                onChange={(event) => setPublicRepository(event.target.value)}
+                placeholder="https://github.com/owner/repository"
+              />
+              <FieldDescription>
+                Your demo sessions are isolated. Private repositories and PR
+                publishing are disabled.
+              </FieldDescription>
+            </Field>
+          ) : null}
           <FormError error={error} />
         </FieldGroup>
       </form>
       <p className="new-conversation-hint">
-        {!runner.repository && !example
+        {!runner.demo && !runner.repository && !example
           ? "Choose a repository before sending your first message."
           : `${agentNames[agent]} · ${workspaceConfig.modelLabel}${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
       </p>

@@ -891,3 +891,153 @@ test("workspace start routing requires authentication and an authorized mutation
   });
   assert.equal(starts, 1);
 });
+
+test("demo login separates browser codes from internal credentials and isolates identical task IDs", async () => {
+  const { authenticate } = await import("../src/auth");
+  const namespaces: string[] = [];
+  let privateGitHubCalls = 0;
+  const env = {
+    ...config,
+    MODEL_API_KEY: crypto.randomUUID(),
+    RUNNER_API_TOKEN: crypto.randomUUID(),
+    WEB_ACCESS_CODE: crypto.randomUUID(),
+    DEMO_ACCESS_CODE: crypto.randomUUID(),
+    GITHUB: {
+      getByName: () => {
+        privateGitHubCalls++;
+        throw Error("Demo reached owner GitHub");
+      },
+    },
+    SANDBOX: {
+      getByName: (name: string) => {
+        namespaces.push(name);
+        return {
+          executionStatus: async () => ({
+            state: "none",
+            containerRunning: false,
+          }),
+          cloneRepository: async (
+            _url: string,
+            _ref: unknown,
+            grant: unknown,
+          ) => {
+            assert.equal(grant, undefined);
+            return { exitCode: 0 };
+          },
+        };
+      },
+    },
+  };
+  const origin = "https://runner.test";
+  const login = async (code: string) =>
+    handler.fetch(
+      new Request(origin + "/session", {
+        method: "POST",
+        headers: { origin, authorization: `Bearer ${code}` },
+      }),
+      env,
+    );
+  assert.equal((await login(env.RUNNER_API_TOKEN)).status, 401);
+  assert.equal((await login(env.MODEL_API_KEY)).status, 401);
+  const first = await login(env.DEMO_ACCESS_CODE);
+  const second = await login(env.DEMO_ACCESS_CODE);
+  assert.equal(first.status, 200);
+  const cookie = first.headers.get("set-cookie")!.split(";")[0];
+  const otherCookie = second.headers.get("set-cookie")!.split(";")[0];
+  assert.notEqual(cookie, otherCookie);
+  const principal = authenticate(
+    new Request(origin, { headers: { cookie } }),
+    env,
+  )!;
+  const get = (path: string, visitor = cookie) =>
+    handler.fetch(
+      new Request(origin + path, { headers: { cookie: visitor } }),
+      env,
+    );
+  const mutate = (path: string, body: unknown) =>
+    handler.fetch(
+      new Request(origin + path, {
+        method: "POST",
+        headers: { origin, cookie, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      env,
+    );
+  const info = await get("/session");
+  const infoText = await info.text();
+  for (const value of [
+    env.MODEL_API_KEY,
+    env.RUNNER_API_TOKEN,
+    env.WEB_ACCESS_CODE,
+    env.DEMO_ACCESS_CODE,
+  ]) {
+    assert.equal(infoText.includes(value), false);
+    assert.equal(cookie.includes(value), false);
+  }
+  await get("/sandboxes/pi-owner-secret/task?role=owner&workspace=owner");
+  await get("/sandboxes/pi-owner-secret/task", otherCookie);
+  assert.ok(namespaces[0].startsWith(`demo:${principal.subject}:`));
+  assert.notEqual(namespaces[0], "pi-owner-secret");
+  assert.notEqual(namespaces[0], namespaces[1]);
+  assert.deepEqual(await (await get("/github/status")).json(), {
+    connected: false,
+    accounts: [],
+  });
+  for (const path of ["/github/repositories", "/github/selected-repository"])
+    assert.equal((await get(path)).status, 403);
+  assert.equal((await mutate("/github/connect", {})).status, 403);
+  assert.equal(
+    (
+      await mutate("/sandboxes/pi-demo/repository", {
+        installationId: 1,
+        repositoryId: 1,
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await mutate("/sandboxes/pi-demo/repository", {
+        url: "https://github.com/octocat/Hello-World",
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await mutate("/sandboxes/pi-demo/pull-request", {
+        title: "No publication",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await (await get("/sandboxes/pi-demo/pull-request")).json()).available,
+    false,
+  );
+  assert.equal(privateGitHubCalls, 0);
+  const foreign = await handler.fetch(
+    new Request(origin + "/session", {
+      method: "POST",
+      headers: {
+        origin: "https://evil.test",
+        authorization: `Bearer ${env.DEMO_ACCESS_CODE}`,
+      },
+    }),
+    env,
+  );
+  assert.equal(foreign.status, 403);
+  const crossOrigin = await handler.fetch(
+    new Request(origin + "/sandboxes/pi-demo/task", {
+      method: "DELETE",
+      headers: { cookie, origin: "https://evil.test" },
+    }),
+    env,
+  );
+  assert.equal(crossOrigin.status, 403);
+  const owner = await login(env.WEB_ACCESS_CODE);
+  assert.equal(owner.status, 200);
+  const ownerCookie = owner.headers.get("set-cookie")!.split(";")[0];
+  await get("/sandboxes/pi-owner-secret/task", ownerCookie);
+  assert.equal(namespaces.at(-1), "pi-owner-secret");
+});
