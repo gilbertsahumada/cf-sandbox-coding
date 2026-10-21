@@ -9,6 +9,7 @@ export type RepositoryGrant = {
   installationId: number;
   repositoryId: number;
   fullName: string;
+  publicOnly?: true;
 };
 export type GitHubRepository = RepositoryGrant & {
   url: string;

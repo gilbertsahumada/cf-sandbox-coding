@@ -412,14 +412,7 @@ createServer(async (req, res) => {
       return json(task.pr, 201);
     }
     if (resource === "pull-request")
-      return json(
-        demoPreview
-          ? {
-              available: false,
-              reason: "Pull request publication is disabled in the demo.",
-            }
-          : { available: task.state !== "running", pr: task.pr },
-      );
+      return json({ available: task.state !== "running", pr: task.pr });
     if (resource === "events") {
       res.writeHead(200, {
         "content-type": "text/event-stream",

@@ -895,7 +895,15 @@ test("workspace start routing requires authentication and an authorized mutation
 test("demo login separates browser codes from internal credentials and isolates identical task IDs", async () => {
   const { authenticate } = await import("../src/auth");
   const namespaces: string[] = [];
-  let privateGitHubCalls = 0;
+  let publicLookups = 0;
+  const publicationIds: string[] = [];
+  const publicGrant = {
+    installationId: 1,
+    repositoryId: 42,
+    fullName: "octocat/Hello-World",
+    publicOnly: true,
+    url: "https://github.com/octocat/Hello-World.git",
+  };
   const env = {
     ...config,
     MODEL_API_KEY: crypto.randomUUID(),
@@ -904,8 +912,13 @@ test("demo login separates browser codes from internal credentials and isolates 
     DEMO_ACCESS_CODE: crypto.randomUUID(),
     GITHUB: {
       getByName: () => {
-        privateGitHubCalls++;
-        throw Error("Demo reached owner GitHub");
+        return {
+          publicRepository: async (url: string) => {
+            publicLookups++;
+            assert.equal(url, "https://github.com/octocat/Hello-World");
+            return publicGrant;
+          },
+        };
       },
     },
     SANDBOX: {
@@ -921,8 +934,16 @@ test("demo login separates browser codes from internal credentials and isolates 
             _ref: unknown,
             grant: unknown,
           ) => {
-            assert.equal(grant, undefined);
+            assert.deepEqual(grant, publicGrant);
             return { exitCode: 0 };
+          },
+          pullRequestStatus: async () => ({ available: true }),
+          createPullRequest: async (id: string) => {
+            publicationIds.push(id);
+            return {
+              url: "https://github.com/octocat/Hello-World/pull/1",
+              number: 1,
+            };
           },
         };
       },
@@ -1006,16 +1027,31 @@ test("demo login separates browser codes from internal credentials and isolates 
   assert.equal(
     (
       await mutate("/sandboxes/pi-demo/pull-request", {
-        title: "No publication",
+        title: "Guest proposal",
       })
     ).status,
-    403,
+    201,
   );
   assert.equal(
     (await (await get("/sandboxes/pi-demo/pull-request")).json()).available,
-    false,
+    true,
   );
-  assert.equal(privateGitHubCalls, 0);
+  await handler.fetch(
+    new Request(origin + "/sandboxes/pi-demo/pull-request", {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: otherCookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ title: "Other guest proposal" }),
+    }),
+    env,
+  );
+  assert.equal(publicationIds.length, 2);
+  assert.notEqual(publicationIds[0], publicationIds[1]);
+  assert.match(publicationIds[0], /^demo-[a-f0-9]{64}$/);
+  assert.equal(publicLookups, 1);
   const foreign = await handler.fetch(
     new Request(origin + "/session", {
       method: "POST",

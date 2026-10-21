@@ -722,7 +722,8 @@ export class AgentSandbox extends DurableObject<Env> {
     if (!this.ctx.storage.kv.get("githubGrant"))
       return {
         available: false,
-        reason: "Run the task with a repository from the GitHub selector.",
+        reason:
+          "Start a new session with a repository authorized in the owner’s GitHub App. Demo publication requires a public repository.",
       };
     if (!this.ctx.storage.kv.get("baseBranch"))
       return {
