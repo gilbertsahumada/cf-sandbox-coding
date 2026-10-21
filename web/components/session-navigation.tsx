@@ -10,6 +10,8 @@ import {
   MessageSquare,
   Plus,
   Search,
+  RefreshCw,
+  Square,
   Settings2,
   X,
 } from "lucide-react";
@@ -20,9 +22,11 @@ import {
   matchesSession,
   relativeTime,
   repositoryLabel,
-  sessionGroup,
   sessionTitle,
 } from "@/lib/session-presentation";
+import { sessionIsRunning } from "@/lib/session-monitor";
+import type { Run } from "@/lib/types";
+import { Spinner } from "./ui/spinner";
 import { agentNames, isActive, stateNames } from "@/lib/types";
 import { AgentLogo } from "./agent-logo";
 import { FileIcon, TaskStateIcon } from "./workspace-indicators";
@@ -35,6 +39,55 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export type SessionView = "session" | "history" | "new" | "review" | "tools";
 type SessionProps = { runner: Runner; titles: Record<string, string> };
+
+function runtimeLabel(runner: Runner, run: Run) {
+  if (runner.stoppingIds.has(run.id)) return "Stopping session…";
+  if (run.state === "cloning") return "Preparing session…";
+  const snapshot = runner.sessions.snapshots[run.id];
+  if (snapshot?.containerRunning === true)
+    return isActive(run.state) ? "Session running" : "Idle · session running";
+  if (snapshot?.containerRunning === false) return "Session stopped";
+  return runner.sessions.checking.has(run.id)
+    ? "Checking session…"
+    : "Session status unavailable";
+}
+function StopSessionButton({ runner, run }: { runner: Runner; run: Run }) {
+  const stopping = runner.stoppingIds.has(run.id);
+  if (
+    run.state === "cloning" ||
+    (!stopping && !sessionIsRunning(run, runner.sessions.snapshots[run.id]))
+  )
+    return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="destructive"
+          size="icon-xs"
+          className="overview-stop"
+          aria-label={`Stop session ${run.id}`}
+          disabled={
+            !runner.connected ||
+            runner.checking ||
+            stopping ||
+            runner.sendingIds.has(run.id)
+          }
+          onClick={() => void runner.stopSession(run.id)}
+        >
+          {stopping ? <Spinner aria-hidden="true" /> : <Square />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {stopping ? "Stopping session…" : "Stop session"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+function sessionSection(runner: Runner, run: Run) {
+  if (sessionIsRunning(run, runner.sessions.snapshots[run.id]))
+    return "Running sessions";
+  return run.state === "succeeded" ? "Awaiting reply" : "Previous sessions";
+}
 
 export function SessionNavigation({
   runner,
@@ -58,12 +111,26 @@ export function SessionNavigation({
   const matches = runner.runs.filter(
     (run) =>
       matchesSession(run, titles, search) &&
-      (filter !== "active" || isActive(run.state)),
+      (filter !== "active" ||
+        sessionIsRunning(run, runner.sessions.snapshots[run.id])),
   );
   return (
     <aside className="session-navigation" aria-label="Sessions">
       <div className="navigation-heading">
         <h2>Overview</h2>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Refresh session statuses"
+          onClick={() => void runner.sessions.refresh()}
+          disabled={!runner.connected || runner.sessions.checking.size > 0}
+        >
+          {runner.sessions.checking.size > 0 ? (
+            <Spinner aria-hidden="true" />
+          ) : (
+            <RefreshCw />
+          )}
+        </Button>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -102,9 +169,13 @@ export function SessionNavigation({
           aria-label="Session filter"
         >
           <ToggleGroupItem value="active">
-            Active{" "}
+            Running{" "}
             <Badge variant="secondary">
-              {runner.runs.filter((run) => isActive(run.state)).length}
+              {
+                runner.runs.filter((run) =>
+                  sessionIsRunning(run, runner.sessions.snapshots[run.id]),
+                ).length
+              }
             </Badge>
           </ToggleGroupItem>
           <ToggleGroupItem value="all">
@@ -113,54 +184,71 @@ export function SessionNavigation({
         </ToggleGroup>
       </div>
       <nav className="navigation-list" aria-label="Known sessions">
-        {["Working", "Awaiting reply", "Previous sessions"].map((group) => {
-          const entries = matches.filter((run) => sessionGroup(run) === group);
-          return entries.length ? (
-            <section key={group}>
-              <h3>
-                {group}
-                <span>{entries.length}</span>
-              </h3>
-              {entries.map((run) => (
-                <Button
-                  key={run.id}
-                  variant={
-                    runner.selected?.id === run.id && view !== "new"
-                      ? "secondary"
-                      : "ghost"
-                  }
-                  className="navigation-entry"
-                  onClick={() => onSelect(run.id)}
-                  aria-current={
-                    runner.selected?.id === run.id && view !== "new"
-                      ? "page"
-                      : undefined
-                  }
-                  title={sessionTitle(run, titles)}
-                >
-                  <TaskStateIcon state={run.state} data-icon="inline-start" />
-                  <span>
-                    <strong className="truncate">
-                      {sessionTitle(run, titles)}
-                    </strong>
-                    <small>
-                      <AgentLogo agent={run.agent} />
-                      {agentNames[run.agent]}
-                      <span>·</span>
-                      <span className="truncate">{stateNames[run.state]}</span>
-                    </small>
-                  </span>
-                </Button>
-              ))}
-            </section>
-          ) : null;
-        })}
+        {["Running sessions", "Awaiting reply", "Previous sessions"].map(
+          (group) => {
+            const entries = matches.filter(
+              (run) => sessionSection(runner, run) === group,
+            );
+            return entries.length ? (
+              <section key={group}>
+                <h3>
+                  {group}
+                  <span>{entries.length}</span>
+                </h3>
+                {entries.map((run) => (
+                  <div key={run.id} className="navigation-session-row">
+                    <Button
+                      variant={
+                        runner.selected?.id === run.id && view !== "new"
+                          ? "secondary"
+                          : "ghost"
+                      }
+                      className="navigation-entry"
+                      onClick={() => onSelect(run.id)}
+                      aria-current={
+                        runner.selected?.id === run.id && view !== "new"
+                          ? "page"
+                          : undefined
+                      }
+                      title={sessionTitle(run, titles)}
+                    >
+                      <TaskStateIcon
+                        state={run.state}
+                        data-icon="inline-start"
+                      />
+                      <span>
+                        <strong className="truncate">
+                          {sessionTitle(run, titles)}
+                        </strong>
+                        <small>
+                          <AgentLogo agent={run.agent} />
+                          {agentNames[run.agent]}
+                          <span>·</span>
+                          <span className="truncate">
+                            {stateNames[run.state]}
+                          </span>
+                        </small>
+                        <small
+                          className="truncate"
+                          title={runtimeLabel(runner, run)}
+                        >
+                          {runtimeLabel(runner, run)}
+                        </small>
+                      </span>
+                    </Button>
+                    <StopSessionButton runner={runner} run={run} />
+                  </div>
+                ))}
+              </section>
+            ) : null;
+          },
+        )}
         {!matches.length ? (
           <p className="sidebar-empty">
             {search
               ? "No matching sessions."
               : filter === "active"
-                ? "No active sessions."
+                ? "No running sessions."
                 : "Your sessions will appear here."}
           </p>
         ) : null}
@@ -216,14 +304,16 @@ export function SessionHistory({
     (run) =>
       matchesSession(run, titles, query) &&
       (filter === "all" ||
-        (filter === "active" ? isActive(run.state) : !isActive(run.state))),
+        (filter === "active"
+          ? sessionIsRunning(run, runner.sessions.snapshots[run.id])
+          : !sessionIsRunning(run, runner.sessions.snapshots[run.id]))),
   );
   return (
     <div className="session-history">
       <div className="history-intro">
         <p>
-          Recent sessions known to this browser. Open one to refresh its status
-          and check recovery.
+          Sessions known to this browser. Runtime status refreshes automatically
+          while this page is visible.
         </p>
         <Button variant="outline" size="sm" onClick={newSession}>
           <Plus data-icon="inline-start" />
@@ -251,49 +341,56 @@ export function SessionHistory({
           aria-label="History filter"
         >
           <ToggleGroupItem value="all">All</ToggleGroupItem>
-          <ToggleGroupItem value="active">Active</ToggleGroupItem>
+          <ToggleGroupItem value="active">Running</ToggleGroupItem>
           <ToggleGroupItem value="saved">Previous</ToggleGroupItem>
         </ToggleGroup>
       </div>
       <div className="history-column-labels" aria-hidden="true">
         <span>Session / repository</span>
         <span>Agent</span>
-        <span>Last known status</span>
+        <span>Agent / cloud session</span>
         <span>Started</span>
       </div>
       <nav aria-label="Session history">
         {matches.map((run) => (
-          <Button
-            key={run.id}
-            variant={runner.selected?.id === run.id ? "secondary" : "ghost"}
-            className="history-row"
-            aria-current={runner.selected?.id === run.id ? "page" : undefined}
-            onClick={() => onSelect(run.id)}
-            onDoubleClick={openSession}
-          >
-            <span className="history-title">
-              <strong className="truncate">{sessionTitle(run, titles)}</strong>
-              <small className="truncate">
-                {repositoryLabel(run.repository)}
-              </small>
-            </span>
-            <span className="history-agent">
-              <AgentLogo agent={run.agent} />
-              {agentNames[run.agent]}
-            </span>
-            <span className="history-state">
-              <TaskStateIcon state={run.state} />
-              {stateNames[run.state]}
-            </span>
-            <time>{relativeTime(run.startedAt)}</time>
-          </Button>
+          <div key={run.id} className="history-session-row">
+            <Button
+              variant={runner.selected?.id === run.id ? "secondary" : "ghost"}
+              className="history-row"
+              aria-current={runner.selected?.id === run.id ? "page" : undefined}
+              onClick={() => onSelect(run.id)}
+              onDoubleClick={openSession}
+            >
+              <span className="history-title">
+                <strong className="truncate">
+                  {sessionTitle(run, titles)}
+                </strong>
+                <small className="truncate">
+                  {repositoryLabel(run.repository)}
+                </small>
+              </span>
+              <span className="history-agent">
+                <AgentLogo agent={run.agent} />
+                {agentNames[run.agent]}
+              </span>
+              <span className="history-state">
+                <TaskStateIcon state={run.state} />
+                <span>
+                  {stateNames[run.state]}
+                  <small>{runtimeLabel(runner, run)}</small>
+                </span>
+              </span>
+              <time>{relativeTime(run.startedAt)}</time>
+            </Button>
+            <StopSessionButton runner={runner} run={run} />
+          </div>
         ))}
       </nav>
       {matches.length ? (
         <div className="history-bottom">
           <span>
-            Up to 12 recent sessions. Saved results and workspace recovery are
-            checked individually.
+            Recent sessions plus running or unverified sessions are kept in this
+            browser. Open a session to check workspace recovery.
           </span>
           <Button
             variant="outline"

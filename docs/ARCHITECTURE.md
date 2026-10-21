@@ -56,6 +56,8 @@ Local preparation (`cloning`) and the backend's execution states have different 
 - Durable Object storage owns archived results, turns, checkpoints, and publication metadata. Browser memory owns unsent messages and unsaved document contents.
 - Recent-task storage contains only the browser-known history. Private entries redact repository metadata and are removed on sign-out. Do not add source, prompts, logs, diffs, or secrets to localStorage.
 - Asynchronous browser results must belong to the current authentication/task generation before changing visible state. Preserve cancellation and stale-response guards when extracting hooks.
+- `use-session-monitor` owns bounded runtime polling for browser-known sessions; background reads contain no agent output. The selected session keeps its single SSE observer. Starting, sending, and stopping one session must not reset another session's transcript, operation lock, or draft.
+- History retains recent references plus active, warm, or unverified sessions; a completed turn alone does not prove its container stopped.
 - Message UUIDs make follow-up retries idempotent. A lost HTTP response is not permission to allocate another message ID or start another native session.
 - File versions detect conflicting saves. Keep the user's draft on conflict; reloading must be an explicit choice.
 - Tool activity stays mounted when hidden so navigation does not lose its streamed output. Avoid creating duplicate stream owners during layout changes.

@@ -2842,3 +2842,32 @@ a {
     font-size: 9px;
   }
 }
+
+/* Keep session selection and cancellation as independent, accessible actions. */
+.navigation-session-row,
+.history-session-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.navigation-session-row .navigation-entry,
+.history-session-row .history-row {
+  flex: 1;
+  min-width: 0;
+}
+.overview-stop {
+  flex-shrink: 0;
+}
+.navigation-heading h2 {
+  flex: 1;
+}
+.history-state small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  margin-top: 3px;
+}
+.history-session-row {
+  padding-right: 6px;
+}

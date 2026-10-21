@@ -11,7 +11,7 @@ The runner can clone [this repository](https://github.com/gilbertsahumada/cf-san
 5. Review the cumulative diff. Use **Create PR** to publish a draft explicitly from the Worker, or download the patch for local review/publication if export restrictions apply.
 6. Merge and deploy only after review and the required checks. A later session clones the updated repository; existing sessions keep their own baseline.
 
-No scheduled or continuous self-improvement loop is enabled. Do not introduce one without a concrete task, execution budget, stopping condition, and explicit authorization. The browser's current single-active-task guard is not a concurrent job scheduler.
+No scheduled or continuous self-improvement loop is enabled. Do not introduce one without a concrete task, execution budget, stopping condition, and explicit authorization. Concurrent sessions are started explicitly by the operator; Overview status monitoring does not schedule or restart agents.
 
 ## Suggested task shape
 

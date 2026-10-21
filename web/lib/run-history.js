@@ -1,6 +1,6 @@
 // @ts-check
 import { agents, stateNames } from "./types";
-import { runnerConfig } from "./config";
+import { retainSessionReferences } from "./session-monitor";
 
 /** @typedef {import("./types").Run} Run */
 /** @typedef {import("./types").Agent} Agent */
@@ -46,26 +46,29 @@ function isRunState(value) {
  * Allowlist the history schema: private repository details and arbitrary API fields
  * must never reach persistent browser storage.
  * @param {unknown} runs
+ * @param {{ preserveAll?: boolean; retainedIds?: string[] }} [options]
  * @returns {Run[]}
  */
-export function historyForStorage(runs) {
+export function historyForStorage(runs, options = {}) {
   if (!Array.isArray(runs)) return [];
-  return runs
-    .filter(isStoredRun)
-    .slice(0, runnerConfig.historyLimit)
-    .map((run) => ({
-      id: run.id,
-      agent: run.agent,
-      private: Boolean(run.private),
-      repository: run.private ? "Private repository" : run.repository,
-      ref: run.private ? "" : typeof run.ref === "string" ? run.ref : "",
-      startedAt:
-        typeof run.startedAt === "number" && Number.isFinite(run.startedAt)
-          ? run.startedAt
-          : null,
-      ...(typeof run.finishedAt === "number" && Number.isFinite(run.finishedAt)
-        ? { finishedAt: run.finishedAt }
-        : {}),
-      state: isRunState(run.state) ? run.state : "none",
-    }));
+  const valid = runs.filter(isStoredRun);
+  return (
+    options.preserveAll
+      ? valid
+      : retainSessionReferences(valid, new Set(options.retainedIds))
+  ).map((run) => ({
+    id: run.id,
+    agent: run.agent,
+    private: Boolean(run.private),
+    repository: run.private ? "Private repository" : run.repository,
+    ref: run.private ? "" : typeof run.ref === "string" ? run.ref : "",
+    startedAt:
+      typeof run.startedAt === "number" && Number.isFinite(run.startedAt)
+        ? run.startedAt
+        : null,
+    ...(typeof run.finishedAt === "number" && Number.isFinite(run.finishedAt)
+      ? { finishedAt: run.finishedAt }
+      : {}),
+    state: isRunState(run.state) ? run.state : "none",
+  }));
 }

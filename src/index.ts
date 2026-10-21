@@ -382,9 +382,14 @@ export default {
       if (resource === "task" && request.method === "DELETE")
         return Response.json(await sandbox.stopTask());
       if (resource === "task" && request.method === "GET")
-        return Response.json(await sandbox.executionStatus(), {
-          headers: { "cache-control": "no-store" },
-        });
+        return Response.json(
+          new URL(request.url).searchParams.get("runtime") === "1"
+            ? await sandbox.sessionStatus()
+            : await sandbox.executionStatus(),
+          {
+            headers: { "cache-control": "no-store" },
+          },
+        );
       if (resource === "logs" && request.method === "GET")
         return Response.json(await sandbox.readLogs());
       if (resource === "diff" && request.method === "GET") {

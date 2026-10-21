@@ -906,6 +906,11 @@ export class AgentSandbox extends DurableObject<Env> {
     });
   }
 
+  async sessionStatus() {
+    const status = await this.executionStatus();
+    return { state: status.state, containerRunning: status.containerRunning };
+  }
+
   async executionStatus(): Promise<ExecutionStatus> {
     const status = await this.readTask();
     // Reading this flag does not start a stopped container or restore a checkpoint.

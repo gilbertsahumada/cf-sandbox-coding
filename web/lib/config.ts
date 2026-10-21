@@ -12,6 +12,9 @@ export const workspaceConfig = {
 // Client scheduling and history bounds do not change sandbox execution budgets.
 export const runnerConfig = {
   historyLimit: 12,
+  monitorIntervalMs: 10_000,
+  monitorTimeoutMs: 15_000,
+  monitorConcurrency: 3,
   historyStorageKey: "sandbox-runs",
   updateChannelName: "sandbox-task-updates",
   requestTimeoutMs: 180_000,

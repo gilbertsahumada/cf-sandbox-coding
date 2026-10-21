@@ -86,3 +86,20 @@ test("history rejects malformed top-level storage values without exposing arbitr
   for (const value of [null, {}, "[]", 12, true])
     assert.deepEqual(historyForStorage(value), []);
 });
+
+test("more than twelve concurrent or unverified sessions survive reload without retaining private details", () => {
+  const runs = Array.from({ length: 20 }, (_, index) => ({
+    id: `pi-${index}`,
+    agent: "pi",
+    private: true,
+    repository: "secret",
+    state: "running",
+    prompt: "secret instructions",
+  }));
+  assert.equal(historyForStorage(runs).length, 20);
+  const idle = runs.map((run) => ({ ...run, state: "succeeded" }));
+  const retained = historyForStorage(idle, { retainedIds: ["pi-18", "pi-19"] });
+  assert.equal(retained.length, 14);
+  assert.equal(historyForStorage(retained, { preserveAll: true }).length, 14);
+  assert.equal(JSON.stringify(retained).includes("secret"), false);
+});
