@@ -132,10 +132,11 @@ test("binary, oversized, symlinked and hard-linked files fail without altering t
   }
 });
 
-
 test("manual edits survive checkpoint restoration alongside the native agent context", async () => {
   // @ts-expect-error Standalone Node module used by the cloud container.
-  const { saveCheckpoint, restoreCheckpoint } = await import("../container/workspace-checkpoint.mjs");
+  const { saveCheckpoint, restoreCheckpoint } = await import(
+    "../container/workspace-checkpoint.mjs"
+  );
   const f = fixture();
   try {
     const repo = join(f.root, "repo");
@@ -143,14 +144,30 @@ test("manual edits survive checkpoint restoration alongside the native agent con
     mkdirSync(join(f.root, "conversation"));
     writeFileSync(join(repo, "file.ts"), "before\n");
     writeFileSync(join(f.root, "conversation/session.jsonl"), "native context");
-    const initial = workspaceFiles(repo, { operation: "read", path: "file.ts" });
-    workspaceFiles(repo, { operation: "write", path: "file.ts", version: initial.version, content: "edited\n" });
+    const initial = workspaceFiles(repo, {
+      operation: "read",
+      path: "file.ts",
+    });
+    workspaceFiles(repo, {
+      operation: "write",
+      path: "file.ts",
+      version: initial.version,
+      content: "edited\n",
+    });
     const archive = join(f.root, "checkpoint.b64");
     writeFileSync(archive, saveCheckpoint(f.root));
     rmSync(repo, { recursive: true });
     rmSync(join(f.root, "conversation"), { recursive: true });
     restoreCheckpoint(archive, f.root);
-    assert.equal(workspaceFiles(repo, { operation: "read", path: "file.ts" }).content, "edited\n");
-    assert.equal(readFileSync(join(f.root, "conversation/session.jsonl"), "utf8"), "native context");
-  } finally { f.dispose(); }
+    assert.equal(
+      workspaceFiles(repo, { operation: "read", path: "file.ts" }).content,
+      "edited\n",
+    );
+    assert.equal(
+      readFileSync(join(f.root, "conversation/session.jsonl"), "utf8"),
+      "native context",
+    );
+  } finally {
+    f.dispose();
+  }
 });

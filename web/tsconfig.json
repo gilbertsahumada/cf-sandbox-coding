@@ -11,7 +11,13 @@
     "noEmit": true,
     "allowJs": true,
     "resolveJsonModule": true,
-    "paths": { "@/*": ["./*"] }
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["./**/*"]
 }

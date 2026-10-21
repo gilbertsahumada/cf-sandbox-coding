@@ -23,11 +23,22 @@ GitHub Actions verifies commits and pull requests without exposure of model or C
 - Do not expand network permissions, access scopes, dependencies, or execution budgets unless the task explicitly requires it.
 - Maintain read-only access for the agent and its GitHub tokens. The explicit "Create PR" flow uses a write token scoped only to the selected repository, issued solely inside the Worker.
 
+## Maintainable code
+
+- Keep constants with the module that owns them. Share a typed configuration object only when several consumers need the same policy; keep local derived values local.
+- Derive unions from readonly domain objects where appropriate, use explicit response types at API boundaries, and avoid `any` or assertions that hide uncertainty. Type assertions do not validate untrusted JSON at runtime.
+- Preserve durable storage keys, task states, network policies and wire contracts when refactoring. A naming cleanup must not migrate stored data accidentally.
+- Explain non-obvious lifecycle, concurrency and security decisions in comments. Prefer clear names over comments that repeat the implementation.
+- Use the pinned Prettier configuration, two-space indentation and one declaration per logical step. Generated Worker declarations are excluded from manual formatting.
+- Both TypeScript projects run in strict mode and reject unused declarations/parameters, switch fallthrough and inconsistent filename casing.
+
 ## Development
 
 ```sh
 npm install           # Install dependencies.
-npm run check         # Lint and type-check.
+npm run format        # Apply the shared formatter.
+npm run format:check  # Check formatting without changing files.
+npm run check         # Type-check the Worker and UI.
 npm test              # Run the automated test suite.
 npm run build         # Build the web interface.
 ```
@@ -49,7 +60,7 @@ docker build --platform linux/amd64 -t cf-sandbox-coding:local .
 
 ## Testing
 
-Run `npm run check` and `npm test` before submitting any change. Add tests when they cover a real bug fix or a meaningful new behavior. The existing suite includes 49 automated tests covering paths, SSE events, PR links, static assets under CSP, and more.
+Run `npm run check` and `npm test` before submitting any change. Add tests when they cover a real bug fix or a meaningful new behavior. The automated suite covers paths, SSE events, PR links, static assets under CSP, and more.
 
 Simulated previews (`npm run preview:editor`) exercise UI states, navigation, drafts, and save flows without running real agent tasks or contacting external APIs. They do not replace verification against a deployed environment.
 
@@ -67,7 +78,7 @@ The Runner's "Create PR" button creates a commit on top of the initial SHA, a `s
 
 ## Workspace tree management
 
-- An subagent never deletes its own worktree; it reports its path to the main agent.
+- A subagent never deletes its own worktree; it reports its path to the main agent.
 - If the main agent is inside a worktree, ask for confirmation before deleting it.
 - From the repository root, the main agent can only clean up worktrees it created itself.
 

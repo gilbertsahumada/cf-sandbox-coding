@@ -1,7 +1,6 @@
 import React, {
   Children,
   isValidElement,
-  memo,
   useEffect,
   useRef,
   useMemo,
@@ -36,7 +35,10 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     : undefined;
   const source = textOf(children);
   const language = useMemo(() => codeLanguage(source, hint), [source, hint]);
-  const tokens = useMemo(() => highlightCode(source, language), [source, language]);
+  const tokens = useMemo(
+    () => highlightCode(source, language),
+    [source, language],
+  );
   async function copy() {
     try {
       await navigator.clipboard.writeText(source.replace(/\n$/, ""));
@@ -67,13 +69,23 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           {copied ? "Copied" : error ? "Copy failed" : "Copy"}
         </Button>
       </div>
-      <pre><code className={`language-${language}`}>{tokens.map((token, index) =>
-        token.className ? <span key={index} className={token.className}>{token.text}</span> : token.text,
-      )}</code></pre>
+      <pre>
+        <code className={`language-${language}`}>
+          {tokens.map((token, index) =>
+            token.className ? (
+              <span key={index} className={token.className}>
+                {token.text}
+              </span>
+            ) : (
+              token.text
+            ),
+          )}
+        </code>
+      </pre>
     </div>
   );
 }
-export const MarkdownResponse = memo(function MarkdownResponse({
+export const MarkdownResponse = React.memo(function MarkdownResponse({
   text,
 }: {
   text: string;

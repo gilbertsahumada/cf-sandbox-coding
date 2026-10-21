@@ -135,7 +135,7 @@ export default function CodeEditor({
       }),
     });
     view.current = instance;
-    callbacks.current.onCursor('Ln 1, Col 1');
+    callbacks.current.onCursor("Ln 1, Col 1");
     void languageFor(path)
       .then((extension) => {
         if (current)

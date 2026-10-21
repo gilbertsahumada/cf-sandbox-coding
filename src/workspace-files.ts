@@ -1,3 +1,4 @@
+export type RepositoryFileOperation = "list" | "read" | "write";
 export type RepositoryFileEntry = {
   name: string;
   path: string;

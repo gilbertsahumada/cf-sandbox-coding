@@ -3,11 +3,9 @@
   "name": "cf-sandbox-coding",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-19",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "upload_source_maps": true,
   "vars": {
@@ -15,13 +13,10 @@
     "MODEL_ID": "qwen3.7-flash",
     "MODEL_API": "chat-completions",
     "MODEL_CONTEXT_WINDOW": "32768",
-    "MODEL_MAX_TOKENS": "4096"
+    "MODEL_MAX_TOKENS": "4096",
   },
   "secrets": {
-    "required": [
-      "MODEL_API_KEY",
-      "RUNNER_API_TOKEN"
-    ]
+    "required": ["MODEL_API_KEY", "RUNNER_API_TOKEN"],
   },
   "containers": [
     {
@@ -29,37 +24,37 @@
       "scheduling_policy": "durable_object",
       "images": {
         "agent": {
-          "dockerfile": "./Dockerfile"
-        }
-      }
-    }
+          "dockerfile": "./Dockerfile",
+        },
+      },
+    },
   ],
   "durable_objects": {
     "bindings": [
       {
         "class_name": "AgentSandbox",
-        "name": "SANDBOX"
+        "name": "SANDBOX",
       },
       {
         "class_name": "GitHubConnection",
-        "name": "GITHUB"
-      }
-    ]
+        "name": "GITHUB",
+      },
+    ],
   },
   "exports": {
     "AgentSandbox": {
       "type": "durable-object",
-      "storage": "sqlite"
+      "storage": "sqlite",
     },
     "GitHubConnection": {
       "type": "durable-object",
-      "storage": "sqlite"
-    }
+      "storage": "sqlite",
+    },
   },
   "account_id": "bc8d4adf4860284fda426b24e7377bc2",
   "assets": {
     "directory": "./dist/ui",
     "binding": "ASSETS",
-    "run_worker_first": true
-  }
+    "run_worker_first": true,
+  },
 }
