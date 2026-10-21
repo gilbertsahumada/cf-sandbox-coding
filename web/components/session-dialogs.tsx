@@ -1,5 +1,12 @@
+import { PublicRepositoryDialog } from "./public-repository-dialog";
+import type { PublicRepository } from "@/lib/public-repository";
 import { workspaceConfig } from "@/lib/config";
-import { AgentPicker, RepositoryPicker } from "./composer-pickers";
+import {
+  AgentPicker,
+  RepositoryPicker,
+  DemoRepositoryPicker,
+  type DemoRepositoryChoice,
+} from "./composer-pickers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
@@ -171,17 +178,21 @@ export function NewConversation({
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [example, setExample] = useState(false);
-  const [publicRepository, setPublicRepository] = useState<string>(
-    workspaceConfig.exampleRepository.url,
-  );
+  const [demoRepository, setDemoRepository] =
+    useState<DemoRepositoryChoice>("project");
+  const [publicRepository, setPublicRepository] =
+    useState<PublicRepository | null>(null);
+  const [repositoryDialogOpen, setRepositoryDialogOpen] = useState(false);
+  const demoRepositoryUrl =
+    demoRepository === "project"
+      ? workspaceConfig.demoRepository.url
+      : publicRepository?.url || "";
   const formRef = useRef<HTMLFormElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const canSend =
     Boolean(prompt.trim()) &&
     !runner.starting &&
-    Boolean(
-      runner.demo ? publicRepository.trim() : runner.repository || example,
-    );
+    Boolean(runner.demo ? demoRepositoryUrl : runner.repository || example);
   useEffect(() => {
     if (active) messageRef.current?.focus({ preventScroll: true });
   }, [active]);
@@ -197,7 +208,7 @@ export function NewConversation({
         ref.trim(),
         example,
         onStarting,
-        runner.demo ? publicRepository.trim() : undefined,
+        runner.demo ? demoRepositoryUrl : undefined,
       );
       setPrompt("");
     } catch (error) {
@@ -243,9 +254,15 @@ export function NewConversation({
               >
                 <AgentPicker value={agent} onChange={setAgent} />
                 {runner.demo ? (
-                  <span className="text-xs text-muted-foreground">
-                    Demo · public repositories
-                  </span>
+                  <DemoRepositoryPicker
+                    value={demoRepository}
+                    onChange={(choice) => {
+                      if (choice === "add") setRepositoryDialogOpen(true);
+                      else setDemoRepository(choice);
+                    }}
+                    customName={publicRepository?.fullName}
+                    disabled={runner.starting}
+                  />
                 ) : (
                   <RepositoryPicker
                     runner={runner}
@@ -274,27 +291,29 @@ export function NewConversation({
             </InputGroup>
           </Field>
           {runner.demo ? (
-            <Field>
-              <FieldLabel htmlFor="public-repository">
-                Public GitHub repository
-              </FieldLabel>
-              <Input
-                id="public-repository"
-                type="url"
-                required
-                value={publicRepository}
-                onChange={(event) => setPublicRepository(event.target.value)}
-                placeholder="https://github.com/owner/repository"
-              />
-              <FieldDescription>
-                Your demo sessions are isolated. Create draft PRs in public
-                repositories authorized in the owner’s GitHub App.
-              </FieldDescription>
-            </Field>
+            <FieldDescription>
+              Work on{" "}
+              {demoRepository === "project"
+                ? workspaceConfig.demoRepository.fullName
+                : publicRepository?.fullName}
+              , or choose another public repository. Draft PRs require access
+              through the owner’s GitHub App.
+            </FieldDescription>
           ) : null}
           <FormError error={error} />
         </FieldGroup>
       </form>
+      {repositoryDialogOpen ? (
+        <PublicRepositoryDialog
+          initialUrl={publicRepository?.url || ""}
+          onCancel={() => setRepositoryDialogOpen(false)}
+          onConfirm={(repository) => {
+            setPublicRepository(repository);
+            setDemoRepository("custom");
+            setRepositoryDialogOpen(false);
+          }}
+        />
+      ) : null}
       <p className="new-conversation-hint">
         {!runner.demo && !runner.repository && !example
           ? "Choose a repository before sending your first message."
