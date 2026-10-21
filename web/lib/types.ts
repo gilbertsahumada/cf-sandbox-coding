@@ -1,13 +1,8 @@
-export type Agent = "pi" | "opencode";
-export type RunState =
-  | "cloning"
-  | "running"
-  | "stopping"
-  | "cancelled"
-  | "succeeded"
-  | "failed"
-  | "lost"
-  | "none";
+import type { TaskState } from "../../src/task-status";
+export const agents = ["pi", "opencode"] as const;
+export type Agent = (typeof agents)[number];
+// Cloning is a browser preparation state; persisted task states come from the server.
+export type RunState = TaskState | "cloning";
 export type Run = {
   id: string;
   agent: Agent;
@@ -55,11 +50,11 @@ export type Proposal = {
   reason?: string;
   pr?: { url: string; number: number; branch: string };
 };
-export const agentNames: Record<Agent, string> = {
+export const agentNames = {
   pi: "Pi",
   opencode: "OpenCode",
-};
-export const stateNames: Record<RunState, string> = {
+} as const satisfies Record<Agent, string>;
+export const stateNames = {
   cloning: "Preparing",
   running: "Working",
   stopping: "Stopping",
@@ -68,6 +63,8 @@ export const stateNames: Record<RunState, string> = {
   failed: "Failed",
   lost: "Workspace lost",
   none: "No task",
-};
+} as const satisfies Record<RunState, string>;
 export const isActive = (state: RunState) =>
-  ["cloning", "running", "stopping"].includes(state);
+  state === "cloning" || state === "running" || state === "stopping";
+
+export type StreamState = "" | "Connecting" | "Live" | "Reconnecting" | "Saved";

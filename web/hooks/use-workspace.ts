@@ -1,10 +1,13 @@
+import { workspaceConfig } from "@/lib/config";
+import type {
+  DirectoryListing,
+  RepositoryEntry,
+  RepositoryFile,
+  SavedRepositoryFile,
+} from "@/lib/api-types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Runner } from "./use-runner";
-export type Entry = {
-  name: string;
-  path: string;
-  kind: "file" | "directory" | "symlink" | "other";
-};
+export type Entry = RepositoryEntry;
 export type Directory = {
   entries: Entry[];
   nextCursor: number | null;
@@ -27,11 +30,11 @@ const keyOf = (task: string, path: string) => `${task}:${path}`;
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "Could not access the workspace.";
 export function useWorkspace(runner: Runner) {
-  const task = runner.selected?.id || "",
-    [directories, setDirectories] = useState<Record<string, Directory>>({}),
-    [documents, setDocuments] = useState<OpenDocument[]>([]),
-    [active, setActive] = useState<Record<string, string>>({}),
-    [mode, setMode] = useState<"code" | "changes">("code");
+  const task = runner.selected?.id || "";
+  const [directories, setDirectories] = useState<Record<string, Directory>>({});
+  const [documents, setDocuments] = useState<OpenDocument[]>([]);
+  const [active, setActive] = useState<Record<string, string>>({});
+  const [mode, setMode] = useState<"code" | "changes">("code");
   const documentsRef = useRef(documents),
     connectedRef = useRef(runner.connected),
     generation = useRef(0),
@@ -42,6 +45,7 @@ export function useWorkspace(runner: Runner) {
   const directoryEpoch = useRef(0);
   const client = runner.request,
     queue = useRef<Promise<unknown>>(Promise.resolve());
+  // Serialize file operations; generation checks prevent queued work crossing sessions.
   const api = useCallback(
     (...args: Parameters<typeof client>) => {
       const ticket = generation.current;
@@ -73,6 +77,7 @@ export function useWorkspace(runner: Runner) {
         stale: true,
       })),
     );
+    // Drafts survive task navigation in memory, but signing out removes source contents.
     if (!runner.connected) {
       setDocuments([]);
       setActive({});
@@ -96,14 +101,15 @@ export function useWorkspace(runner: Runner) {
         },
       }));
       try {
-        const data = await (
+        const data: DirectoryListing = await (
           await api(
             `/sandboxes/${task}/files?${new URLSearchParams({ path, cursor: String(cursor) })}`,
           )
         ).json();
         if (ticket !== generation.current || epoch !== directoryEpoch.current)
           return;
-        if (!Array.isArray(data.entries)) throw new Error("Repository files are not available yet.");
+        if (!Array.isArray(data.entries))
+          throw new Error("Repository files are not available yet.");
         setDirectories((previous) => ({
           ...previous,
           [key]: {
@@ -133,8 +139,21 @@ export function useWorkspace(runner: Runner) {
     directoryEpoch.current++;
     directoryRef.current = {};
     setDirectories({});
-    if (task && runner.connected && runner.selected?.state !== "cloning" && !(runner.startup?.task === task && runner.startup.stage === "failed")) void directory("");
-  }, [directory, task, runner.connected, runner.selected?.state, runner.startup?.task, runner.startup?.stage]);
+    if (
+      task &&
+      runner.connected &&
+      runner.selected?.state !== "cloning" &&
+      !(runner.startup?.task === task && runner.startup.stage === "failed")
+    )
+      void directory("");
+  }, [
+    directory,
+    task,
+    runner.connected,
+    runner.selected?.state,
+    runner.startup?.task,
+    runner.startup?.stage,
+  ]);
   useEffect(() => {
     refreshTree();
   }, [refreshTree, runner.selected?.state]);
@@ -161,10 +180,13 @@ export function useWorkspace(runner: Runner) {
         (!cached.error || cached.content !== cached.original)
       )
         return;
-      if (!cached && documentsRef.current.length >= 20) {
+      if (
+        !cached &&
+        documentsRef.current.length >= workspaceConfig.maxOpenDocuments
+      ) {
         runner.report(
           new Error(
-            "Close an open file before opening another one (20-file limit).",
+            `Close an open file before opening another one (${workspaceConfig.maxOpenDocuments}-file limit).`,
           ),
         );
         return;
@@ -185,7 +207,7 @@ export function useWorkspace(runner: Runner) {
           },
         ]);
       try {
-        const data = await (
+        const data: RepositoryFile = await (
           await api(`/sandboxes/${task}/file?${new URLSearchParams({ path })}`)
         ).json();
         if (ticket !== generation.current) return;
@@ -214,7 +236,7 @@ export function useWorkspace(runner: Runner) {
         submitted = doc.content;
       update(task, path, { saving: true, error: undefined });
       try {
-        const data = await (
+        const data: SavedRepositoryFile = await (
           await api(
             `/sandboxes/${task}/file`,
             { path, content: submitted, version: doc.version },
@@ -281,7 +303,10 @@ export function useWorkspace(runner: Runner) {
   return {
     task,
     preparing: runner.selected?.state === "cloning",
-    preparationError: runner.startup?.task === task && runner.startup.stage === "failed" ? runner.startup.error || "Session preparation failed." : null,
+    preparationError:
+      runner.startup?.task === task && runner.startup.stage === "failed"
+        ? runner.startup.error || "Session preparation failed."
+        : null,
     directories,
     directory,
     refreshTree,

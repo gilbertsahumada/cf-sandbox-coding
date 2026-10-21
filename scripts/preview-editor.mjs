@@ -193,8 +193,15 @@ createServer(async (req, res) => {
     const [, id, resource] = match;
     let task = tasks.get(id);
     if (resource === "repository") {
-      if (slowStart) await new Promise(resolve => setTimeout(resolve, 8000));
-      if (failStart) return json({ message: "Preview: repository preparation failed. Your instruction is preserved." }, 503);
+      if (slowStart) await new Promise((resolve) => setTimeout(resolve, 8000));
+      if (failStart)
+        return json(
+          {
+            message:
+              "Preview: repository preparation failed. Your instruction is preserved.",
+          },
+          503,
+        );
       tasks.set(id, {
         files: new Map(seedFiles),
         agent: id.startsWith("pi") ? "pi" : "opencode",
@@ -204,7 +211,10 @@ createServer(async (req, res) => {
       });
       return json({ exitCode: 0 }, 201);
     }
-    if (!task) return ["files", "file"].includes(resource) ? json({ message: "This session has no prepared repository." }, 409) : json({ state: "none" });
+    if (!task)
+      return ["files", "file"].includes(resource)
+        ? json({ message: "This session has no prepared repository." }, 409)
+        : json({ state: "none" });
     if (resource === "files" || resource === "file") {
       task.files ||= new Map(seedFiles);
       const path = url.searchParams.get("path") || "";
@@ -256,13 +266,18 @@ createServer(async (req, res) => {
         task.files.set(data.path, data.content);
         const baseline = seedFiles.get(data.path) ?? current;
         const header = `diff --git a/${data.path} b/${data.path}\n`;
-        task.patch = task.patch.split(/(?=^diff --git )/m).filter(part => !part.startsWith(header)).join("") + `diff --git a/${data.path} b/${data.path}\n--- a/${data.path}\n+++ b/${data.path}\n@@ -1,${baseline.split("\n").length} +1,${data.content.split("\n").length} @@\n${baseline
-          .split("\n")
-          .map((line) => "-" + line)
-          .join("\n")}\n${data.content
-          .split("\n")
-          .map((line) => "+" + line)
-          .join("\n")}\n`;
+        task.patch =
+          task.patch
+            .split(/(?=^diff --git )/m)
+            .filter((part) => !part.startsWith(header))
+            .join("") +
+          `diff --git a/${data.path} b/${data.path}\n--- a/${data.path}\n+++ b/${data.path}\n@@ -1,${baseline.split("\n").length} +1,${data.content.split("\n").length} @@\n${baseline
+            .split("\n")
+            .map((line) => "-" + line)
+            .join("\n")}\n${data.content
+            .split("\n")
+            .map((line) => "+" + line)
+            .join("\n")}\n`;
         return json({
           path: data.path,
           version: versionOf(data.content),
@@ -281,7 +296,7 @@ createServer(async (req, res) => {
       });
     }
     if (resource === "task" && req.method === "POST") {
-      if (slowStart) await new Promise(resolve => setTimeout(resolve, 4000));
+      if (slowStart) await new Promise((resolve) => setTimeout(resolve, 4000));
       let body = "";
       for await (const chunk of req) body += chunk;
       const data = JSON.parse(body);
@@ -389,7 +404,7 @@ createServer(async (req, res) => {
         },
       ];
       res.write(
-        `id: 100:0\nevent: stdout\ndata: ${JSON.stringify((archived ? 'truncated-leading-event\n' : '') + events.map((event) => JSON.stringify(event)).join("\n") + "\n")}\n\n`,
+        `id: 100:0\nevent: stdout\ndata: ${JSON.stringify((archived ? "truncated-leading-event\n" : "") + events.map((event) => JSON.stringify(event)).join("\n") + "\n")}\n\n`,
       );
       const complete = () => {
         res.write(
@@ -443,5 +458,7 @@ createServer(async (req, res) => {
       : bytes,
   );
 }).listen(port, "127.0.0.1", () =>
-  console.log(`Simulated sessions: http://127.0.0.1:${port}/?task=pi-editor-demo`),
+  console.log(
+    `Simulated sessions: http://127.0.0.1:${port}/?task=pi-editor-demo`,
+  ),
 );

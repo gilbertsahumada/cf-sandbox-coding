@@ -1,4 +1,5 @@
 import { ChatCompletion } from "@/components/chat-completion";
+import { workspaceConfig } from "@/lib/config";
 import {
   SessionNavigation,
   SessionHistory,
@@ -821,7 +822,7 @@ function AgentChat({
                 <InputGroupAddon align="block-end" className="composer-actions">
                   <InputGroupText>
                     <Cpu aria-hidden="true" />
-                    Qwen 3.7 Flash
+                    {workspaceConfig.modelLabel}
                   </InputGroupText>
                   <div className="flex items-center gap-2">
                     <KbdGroup>

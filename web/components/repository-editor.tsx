@@ -1,12 +1,6 @@
 import { startupText } from "@/lib/session-start";
 import { lazy, Suspense, useState } from "react";
-import {
-  Save,
-  X,
-  RefreshCw,
-  FileCode2,
-  CircleAlert,
-} from "lucide-react";
+import { Save, X, RefreshCw, FileCode2, CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
@@ -55,10 +49,15 @@ export function RepositoryEditor({
       setDiscard({ path: doc.path, reload: true });
     else void workspace.open(doc.path, true);
   }
-  const startup = runner.startup?.task === runner.selected?.id ? runner.startup : null;
+  const startup =
+    runner.startup?.task === runner.selected?.id ? runner.startup : null;
   const blocked = Boolean(runner.selected && isActive(runner.selected.state));
   return (
-    <Tabs value={doc?.path || ""} onValueChange={path=>void workspace.open(path)} className="repository-editor">
+    <Tabs
+      value={doc?.path || ""}
+      onValueChange={(path) => void workspace.open(path)}
+      className="repository-editor"
+    >
       <div className="source-tabs">
         <TabsList variant="line" aria-label="Open files">
           {workspace.documents.map((file) => (
@@ -193,11 +192,23 @@ export function RepositoryEditor({
         <Empty className="editor-empty">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              {startup && startup.stage !== "failed" ? <Spinner /> : <FileCode2 />}
+              {startup && startup.stage !== "failed" ? (
+                <Spinner />
+              ) : (
+                <FileCode2 />
+              )}
             </EmptyMedia>
-            <EmptyTitle>{startup ? startup.stage === "failed" ? "Workspace unavailable" : "Preparing workspace" : "Open a file"}</EmptyTitle>
+            <EmptyTitle>
+              {startup
+                ? startup.stage === "failed"
+                  ? "Workspace unavailable"
+                  : "Preparing workspace"
+                : "Open a file"}
+            </EmptyTitle>
             <EmptyDescription>
-              {startup ? startupText(startup) : "Browse the repository on the left. Your edits are saved to this cloud session."}
+              {startup
+                ? startupText(startup)
+                : "Browse the repository on the left. Your edits are saved to this cloud session."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -1,3 +1,4 @@
+import { workspaceConfig } from "@/lib/config";
 import { AgentPicker, RepositoryPicker } from "./composer-pickers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -14,7 +15,6 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupInput,
   InputGroupTextarea,
   InputGroupButton,
 } from "@/components/ui/input-group";
@@ -213,7 +213,7 @@ export function NewConversation({
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 rows={3}
-                maxLength={32000}
+                maxLength={workspaceConfig.maxPromptLength}
                 disabled={runner.busy}
                 placeholder="Describe a change, ask a question, or plan your next task…"
                 onKeyDown={(event) => {
@@ -261,7 +261,7 @@ export function NewConversation({
           ? "A task is running. Open it in Overview to continue or stop it before sending."
           : !runner.repository && !example
             ? "Choose a repository before sending your first message."
-            : `${agentNames[agent]} · Qwen 3.7 Flash${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
+            : `${agentNames[agent]} · ${workspaceConfig.modelLabel}${ref.trim() ? ` · ${ref.trim()}` : ""} · Enter to send, Shift+Enter for a new line.`}
       </p>
     </div>
   );

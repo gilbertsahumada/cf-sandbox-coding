@@ -1,33 +1,36 @@
-# Mejorar el runner con sus propios agentes
+# Improving the runner with its own agents
 
-Repositorio: https://github.com/gilbertsahumada/cf-sandbox-coding
+The runner can clone [this repository](https://github.com/gilbertsahumada/cf-sandbox-coding) as input to a cloud coding session. Treat every execution as a bounded proposal, with human review before publication, merge, or deployment.
 
-## Ciclo de trabajo
+## Workflow
 
-1. Autoriza este repositorio en la GitHub App del runner cuando la conexión esté funcionando.
-2. En la interfaz elige este repositorio, Pi u OpenCode y una tarea acotada.
-3. El agente trabaja sobre un clon aislado. Responde en el chat de esa tarea para continuar con su contexto y cambios. Los logs y el patch se actualizan en cada turno.
-4. Revisa los cambios y pulsa **Crear PR** para publicar una rama y un borrador desde el Worker. Describe las pruebas realizadas; ejecuta las comprobaciones antes de incorporar la propuesta.
-5. Incorpora los cambios y despliega después de revisarlos. La siguiente tarea clonará la versión actualizada.
+1. Authorize this repository in the runner's GitHub App installation.
+2. Open **New chat**, choose this repository and Pi/OpenCode, and send one concrete task with expected behavior and relevant checks.
+3. Continue in the same conversation to preserve native agent context and workspace changes. Inspect **Tools** and **Changes**; an agent's claim of success is not independent verification.
+4. Run `npm run check`, `npm test`, and the relevant build/format checks when dependencies are available. Report unavailable tools or blocked checks honestly; the sandbox cannot fetch packages from registries.
+5. Review the cumulative diff. Use **Create PR** to publish a draft explicitly from the Worker, or download the patch for local review/publication if export restrictions apply.
+6. Merge and deploy only after review and the required checks. A later session clones the updated repository; existing sessions keep their own baseline.
 
-La clonación y la red del agente mantienen permisos de lectura. El botón **Crear PR** requiere aprobar Contents y Pull requests en Read and write en la GitHub App; solo el Worker recibe un token de escritura limitado al repositorio seleccionado. No hay mejoras periódicas. GitHub Actions verifica los commits y pull requests sin credenciales del modelo o de Cloudflare.
+No scheduled or continuous self-improvement loop is enabled. Do not introduce one without a concrete task, execution budget, stopping condition, and explicit authorization. The browser's current single-active-task guard is not a concurrent job scheduler.
 
-## Estado de la conexión GitHub
+## Suggested task shape
 
-Se corrigieron dos fallos: Cloudflare rechaza redirect: error, y la comprobación de permisos consumía el cuerpo POST de Git antes de enviarlo. El registro, el catálogo y una clonación privada ya están verificados en Cloudflare. Las tareas con Pi y OpenCode contra repositorios públicos se probaron anteriormente; esta comprobación privada solo clonó el repositorio y no envió su código al modelo.
+> Reproduce [specific problem] and fix its demonstrated cause. Keep existing security and recovery behavior. Add a focused regression test if appropriate. Run the required checks, explain which integrations still need live verification, and return the diff. Do not commit, push, merge, or deploy from the sandbox.
 
-Tarea de mejora sugerida:
+Read [AGENTS.md](../AGENTS.md), [README.md](../README.md), and [ARCHITECTURE.md](ARCHITECTURE.md) before changing the runner. Keep English comments and messages; explain non-obvious decisions without narrating each line. Prefer focused contracts and module ownership over scattered state strings or a general-purpose constants file.
 
-> Investiga el flujo de conexión GitHub desde el botón de la interfaz hasta los callbacks de manifiesto e instalación. Reproduce el fallo con pruebas que cubran el intercambio realista de respuestas y los errores del Durable Object. Corrige la causa demostrada, conserva la validación de estado y cookies, y muestra errores útiles sin revelar credenciales. Ejecuta npm run check y npm test. Entrega el diff e indica qué requiere todavía verificación en GitHub real. No hagas commit ni despliegues.
+## Manual edits during a session
 
-## Siguientes mejoras candidatas
+Open **Changes** to browse repository files and edit existing text files. Save after the agent has finished or stopped, then send the next instruction in the same chat. Saves update the cumulative patch and checkpoint and tell the next agent turn which files changed manually.
 
-- Preparar dependencias de prueba en la imagen para que el agente pueda verificar este proyecto dentro del sandbox.
-- Limpiar resultados antiguos de forma configurable.
+On a save conflict, keep the draft until you deliberately choose to reload. Browser-only drafts are lost on full reload. If checkpoint creation fails, the save exists in the current running environment but is not guaranteed to survive container loss. Old sessions with archived patches but no current checkpoint cannot restore their files or native conversation.
 
-No actives un bucle de ejecución continua sin definir primero una tarea, un presupuesto y una condición de parada.
+## Boundaries to preserve
 
+- Model and GitHub secrets stay in the Worker; agents receive no real credentials.
+- App-backed cloning/agent access remains read-only for the selected repository. Explicit PR publication uses a separate restricted write token only in the Worker.
+- Do not expand network access, dependency installation, permissions, or execution budgets as incidental cleanup.
+- Do not read or include `.dev.vars`, `.env`, private keys, or secret values in prompts, logs, patches, or commits.
+- Describe local, simulated, container, and live verification separately. See [OPERATIONS.md](OPERATIONS.md) for commands and limits.
 
-## Manual edits in a cloud session
-
-Use Files to inspect the cloned repository and Code to edit existing text files. Save after the agent stops, then send your next instruction in the same task. The runner updates its cumulative diff and recovery checkpoint and tells the native agent which files you edited. Review Changes before using Create PR. A conflict preserves the local draft; reload only after deciding to discard it. Unsaved browser drafts are not durable, and sessions with no current recovery checkpoint cannot restore their files after the container expires.
+Potential future work includes preparing additional build/test dependencies in the image and configurable archive cleanup. These are separate changes, not prerequisites for routine tasks.
