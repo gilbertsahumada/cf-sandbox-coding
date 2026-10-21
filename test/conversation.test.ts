@@ -701,3 +701,26 @@ test("the editor nonce matches its CSP and never enables arbitrary inline styles
     !response.headers.get("content-security-policy").includes("unsafe-inline"),
   );
 });
+
+test("runtime status distinguishes a completed turn from a stopped container without starting one", async () => {
+  const f = fixture();
+  await f.sandbox.startTask("First", "pi");
+  f.complete("Done");
+  const warm = await f.sandbox.executionStatus();
+  assert.equal(warm.state, "succeeded");
+  assert.equal(warm.containerRunning, true);
+  const checkpoint = f.stored.get("checkpoint");
+  const stopped = await f.sandbox.stopTask();
+  assert.equal(stopped.state, "succeeded");
+  assert.equal(stopped.containerRunning, false);
+  assert.deepEqual(f.stored.get("checkpoint"), checkpoint);
+  const before = f.spawns;
+  assert.deepEqual(await f.sandbox.executionStatus(), {
+    state: "succeeded",
+    result: "Done",
+    containerRunning: false,
+  });
+  assert.equal(f.spawns, before);
+  assert.equal(f.container.running, false);
+  assert.equal((await f.sandbox.conversation()).canContinue, true);
+});

@@ -1,5 +1,8 @@
 import type { Agent, Repository } from "./types";
-import type { TaskStatus as ServerTaskStatus } from "../../src/task-status";
+import type {
+  TaskStatus as ServerTaskStatus,
+  ExecutionStatus as ServerExecutionStatus,
+} from "../../src/task-status";
 import type {
   RepositoryFileEntry,
   RepositoryFilesResult,
@@ -22,6 +25,11 @@ export type GitHubConnection =
   | { action: string; manifest: Record<string, unknown> };
 
 export type TaskStatus = ServerTaskStatus;
+export type ExecutionStatus = ServerExecutionStatus;
+export type StopResult = {
+  state: TaskStatus["state"];
+  containerRunning: boolean;
+};
 
 export type TaskInstruction = { agent: Agent; prompt: string };
 export type RepositorySelection = (

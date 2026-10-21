@@ -106,4 +106,5 @@ These scripts do not cover every private-repository, PR-permission, or manual-ed
 - **A completed task cannot resume:** inspect its checkpoint reason. An archived patch alone cannot restore a native session.
 - **Tools says logs are archived:** only output tails are available after shutdown; inspect task status separately to determine success or failure.
 - **Create PR is blocked:** inspect the reported reason (permissions, unsupported files, missing source branch, or export limits). Review the patch locally when automatic publication is unavailable.
+- **Agent finished but the session is running:** a completed turn can retain an idle container. Use **Stop session** in the header to shut it down; completed status, archived changes and checkpoints remain available. Status checks do not start containers or poll tool logs.
 - **Closing the page left work running:** reconnect using the task link and stop it explicitly. Browser history is not a complete list of server processes.

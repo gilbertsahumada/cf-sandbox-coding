@@ -8,6 +8,8 @@ export type TaskStatus =
   | { state: "succeeded"; result: string }
   | { state: "failed"; error: string };
 
+export type ExecutionStatus = TaskStatus & { containerRunning: boolean };
+
 export type TaskState = TaskStatus["state"];
 export type ActiveTaskState = "running" | "stopping";
 export const activeStates: readonly TaskState[] = ["running", "stopping"];
