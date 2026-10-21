@@ -1529,11 +1529,41 @@ a {
   height: auto;
 }
 
+/* Graphite layers separate the canvas, active conversation and supporting panels. */
+.dark {
+  --shell: #0d0e10;
+  --background: #17191d;
+  --editor: #24272d;
+  --foreground: #d7dbe2;
+  --card: #24272d;
+  --card-foreground: #d7dbe2;
+  --popover: #24272d;
+  --popover-foreground: #d7dbe2;
+  --primary: #e5e9ef;
+  --primary-foreground: #17191d;
+  --secondary: #30353e;
+  --secondary-foreground: #f5f6f8;
+  --muted: #2c3038;
+  --muted-foreground: #a1a8b4;
+  --accent: #343a44;
+  --accent-foreground: #f5f6f8;
+  --border: #383d46;
+  --input: #4b535f;
+  --ring: #b9c1cd;
+  --sidebar: #17191d;
+  --sidebar-foreground: #d7dbe2;
+  --sidebar-border: #383d46;
+  --sidebar-accent: #30353e;
+  --sidebar-accent-foreground: #f5f6f8;
+  --heading: #f5f6f8;
+  --code-surface: #191c21;
+}
+
 /* Compact session-first workspace. Neutral selection surfaces replace side stripes. */
 .agent-workspace {
-  --primary: #dce1e9;
-  --primary-foreground: #1b1e25;
-  --ring: #9da6b5;
+  --primary: #e5e9ef;
+  --primary-foreground: #17191d;
+  --ring: #b9c1cd;
   --radius: 0.65rem;
   font-size: 12px;
 }
@@ -1600,7 +1630,8 @@ a {
   min-height: 0;
   overflow: hidden;
 }
-.navigation-surface {
+.navigation-surface,
+.session-details {
   background: var(--sidebar);
 }
 .session-navigation {
@@ -2353,4 +2384,31 @@ a {
   .session-layout[data-details="true"] .navigation-surface {
     display: none;
   }
+}
+
+/* Titles and active content lead; metadata stays quieter without colored accents. */
+.agent-workspace .brand strong,
+.session-toolbar h1,
+.navigation-heading h2,
+.details-scroll h3,
+.details-title,
+.agent-workspace .assistant-label strong,
+.agent-workspace .markdown-response h1,
+.agent-workspace .markdown-response h2,
+.agent-workspace .markdown-response h3 {
+  color: var(--heading);
+}
+.agent-workspace .response-code {
+  background: var(--code-surface);
+}
+.agent-workspace .response-code-heading {
+  background: var(--code-surface);
+  color: var(--muted-foreground);
+}
+.agent-workspace .response-code pre {
+  background: var(--code-surface);
+}
+.agent-workspace .navigation-entry[aria-current="page"],
+.agent-workspace .history-row[aria-current="page"] {
+  border-color: #596270;
 }
