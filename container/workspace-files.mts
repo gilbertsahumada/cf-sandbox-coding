@@ -18,10 +18,13 @@ import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 const limit = 256 * 1024;
-const fail = (message, status = 400) => {
+function fail(message: string, status = 400): never {
   throw Object.assign(new Error(message), { status });
-};
-export function permittedPath(value, directory = false) {
+}
+export function permittedPath(
+  value: unknown,
+  directory = false,
+): value is string {
   if (
     typeof value !== "string" ||
     value.length > 2048 ||
@@ -47,7 +50,7 @@ export function permittedPath(value, directory = false) {
       )
   );
 }
-function checked(root, path, directory = false) {
+function checked(root: string, path: string, directory = false) {
   if (!permittedPath(path, directory))
     fail("This path is unavailable in the web editor.", 403);
   let current = root;
@@ -66,7 +69,12 @@ function checked(root, path, directory = false) {
   return current;
 }
 // Linux directory descriptors anchor every lookup, even if an agent renames a parent.
-function withAnchoredPath(root, relative, directory, action) {
+function withAnchoredPath<T>(
+  root: string,
+  relative: string,
+  directory: boolean,
+  action: (path: string) => T,
+): T {
   if (!permittedPath(relative, directory))
     fail("This path is unavailable in the web editor.", 403);
   if (process.platform !== "linux")
@@ -92,8 +100,9 @@ function withAnchoredPath(root, relative, directory, action) {
     return action(
       directory ? `/proc/self/fd/${fd}` : `/proc/self/fd/${fd}/${parts.at(-1)}`,
     );
-  } catch (error) {
-    if (["ELOOP", "ENOTDIR"].includes(error.code))
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
+    if (["ELOOP", "ENOTDIR"].includes(error.code as string))
       fail(
         "Symbolic links and paths outside the repository cannot be opened.",
         403,
@@ -103,7 +112,7 @@ function withAnchoredPath(root, relative, directory, action) {
     for (const fd of descriptors.reverse()) closeSync(fd);
   }
 }
-function bytesAt(path) {
+function bytesAt(path: string) {
   const fd = openSync(
     path,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -145,7 +154,14 @@ function bytesAt(path) {
     closeSync(fd);
   }
 }
-export function workspaceFiles(root, request) {
+type FileRequest = {
+  operation: string;
+  path: string;
+  cursor?: number;
+  content?: unknown;
+  version?: string;
+};
+export function workspaceFiles(root: string, request: FileRequest) {
   return withAnchoredPath(
     root,
     request.path,
@@ -271,7 +287,8 @@ if (
     console.log(
       JSON.stringify(workspaceFiles("/workspace/repo", JSON.parse(input))),
     );
-  } catch (error) {
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
     console.log(
       JSON.stringify({
         error: error.status

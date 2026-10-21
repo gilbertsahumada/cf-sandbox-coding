@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const source = readFileSync(
-  new URL("../container/workspace-files.mjs.txt", import.meta.url),
+  new URL("../dist/container/workspace-files.mjs.txt", import.meta.url),
   "utf8",
 );
 const { workspaceFiles, permittedPath } = await import(
@@ -135,7 +135,7 @@ test("binary, oversized, symlinked and hard-linked files fail without altering t
 test("manual edits survive checkpoint restoration alongside the native agent context", async () => {
   // @ts-expect-error Standalone Node module used by the cloud container.
   const { saveCheckpoint, restoreCheckpoint } = await import(
-    "../container/workspace-checkpoint.mjs"
+    "../dist/container/workspace-checkpoint.mjs"
   );
   const f = fixture();
   try {

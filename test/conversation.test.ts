@@ -19,7 +19,7 @@ import { ChatMessage, continuationReason } from "../src/conversation";
 import {
   saveCheckpoint,
   restoreCheckpoint,
-} from "../container/workspace-checkpoint.mjs";
+} from "../dist/container/workspace-checkpoint.mjs";
 
 // Exercise the real Durable Object logic with in-memory Cloudflare/container transports.
 let source = ts.transpileModule(
@@ -33,7 +33,7 @@ let source = ts.transpileModule(
 ).outputText;
 source = source.replace(
   /import workspaceFilesSource from [^;]+;/,
-  `const workspaceFilesSource = ${JSON.stringify(readFileSync(new URL("../container/workspace-files.mjs.txt", import.meta.url), "utf8"))};`,
+  `const workspaceFilesSource = ${JSON.stringify(readFileSync(new URL("../dist/container/workspace-files.mjs.txt", import.meta.url), "utf8"))};`,
 );
 source = source.replace(
   /import .* from ["']cloudflare:workers["'];/,

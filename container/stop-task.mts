@@ -1,23 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 export async function stopTaskProcess(
-  directory,
+  directory: string,
   bootPath = "/proc/sys/kernel/random/boot_id",
 ) {
   let record;
   try {
     record = await readFile(`${directory}/pid`, "utf8");
-  } catch (error) {
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException & { status?: number };
     if (error.code === "ENOENT") return;
     throw error;
   }
   const [pid, boot] = record.trim().split(/\s+/);
   const currentBoot = (await readFile(bootPath, "utf8")).trim();
   if (!/^[1-9][0-9]*$/.test(pid) || boot !== currentBoot) return;
-  for (const signal of ["SIGTERM", "SIGKILL"]) {
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     try {
       process.kill(-Number(pid), signal);
-    } catch (error) {
+    } catch (caught) {
+      const error = caught as NodeJS.ErrnoException & { status?: number };
       if (error.code === "ESRCH") return;
       throw error;
     }

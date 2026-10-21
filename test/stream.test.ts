@@ -7,11 +7,11 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { logCursor, eventFrame } from "../src/event-stream";
 // @ts-expect-error Container helpers are plain JavaScript.
-import { completeUtf8Length } from "../container/follow-task.mjs";
+import { completeUtf8Length } from "../dist/container/follow-task.mjs";
 // @ts-expect-error Container helpers are plain JavaScript.
-import { stopTaskProcess } from "../container/stop-task.mjs";
+import { stopTaskProcess } from "../dist/container/stop-task.mjs";
 // @ts-expect-error Container helpers are plain JavaScript.
-import { openCodeEvents } from "../container/opencode-events.mjs";
+import { openCodeEvents } from "../dist/container/opencode-events.mjs";
 
 test("log cursors accept byte offsets and reject unsafe or injected values", () => {
   assert.equal(logCursor("0012:34"), "12:34");
@@ -104,7 +104,7 @@ test(
       await writeFile(join(directory, "stderr.log"), "");
       observer = spawn(
         process.execPath,
-        ["container/follow-task.mjs", directory, "0:0"],
+        ["dist/container/follow-task.mjs", directory, "0:0"],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
       const frames = watchOutput(observer);
@@ -119,7 +119,7 @@ test(
       await writeFile(join(directory, "exit-code"), "0");
       observer = spawn(
         process.execPath,
-        ["container/follow-task.mjs", directory, cursor],
+        ["dist/container/follow-task.mjs", directory, cursor],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
       const resumed = watchOutput(observer);

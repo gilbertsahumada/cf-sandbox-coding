@@ -48,7 +48,7 @@ npm run dev:ui         # Vite UI with hot reload; needs the Worker on :8787.
 npm run preview:editor # Simulated UI on :8795; no Cloudflare or model calls.
 ```
 
-The fixture preview uses `fixture-runner-token` if you test signing out and back in. Run it with `--slow`, `--slow-start`, or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server.
+The fixture preview uses `fixture-runner-token` if you test signing out and back in. Run it with `--slow`, `--slow-start`, or `--fail-start` to inspect loading and error states. Wrangler serves the built UI, so rebuild after editing it unless using the Vite development server. Container TypeScript is compiled automatically by `check`, `test`, and `build`, and inside the Docker image build; see the [container build guide](docs/ARCHITECTURE.md#container-typescript-build).
 
 ## Validate and deploy
 
